@@ -4,37 +4,38 @@ import { JsonlDb } from '.'
 
 function makeObj(i: number) {
   return {
-    type: "state",
+    type: 'state',
     common: {
       name: i.toString(),
       read: true,
       write: true,
-      role: "state",
-      type: "number",
+      role: 'state',
+      type: 'number',
     },
     native: {},
-  };
+  }
 }
 
-
-function main() {
+async function main() {
   const db = new JsonlDb('test.txt')
-  db.open()
+  await db.open()
   console.log(db.isOpen())
 
   let start = Date.now()
   let calls = 0
 
   while (Date.now() - start < 1000) {
-    const key = `benchmark.0.test${calls}`;
-    const value = makeObj(calls);
-    db.add(key, value);
+  // for (let i = 0; i < 10; i++) {
+    const key = `benchmark.0.test${calls}`
+    const value = makeObj(calls)
+    db.add(key, value)
     calls++
+  // }
   }
 
   console.log('calls:', calls)
 
-  db.close()
+  await db.close()
 
   console.log('closed')
 }

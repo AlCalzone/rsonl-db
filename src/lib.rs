@@ -32,6 +32,13 @@ impl DB {
     }
   }
 
+  fn as_opened(&self) -> Option<&RsonlDB<Opened>> {
+    match self {
+      DB::Opened(x) => Some(x),
+      _ => None,
+    }
+  }
+
   fn as_opened_mut(&mut self) -> Option<&mut RsonlDB<Opened>> {
     match self {
       DB::Opened(x) => Some(x),
@@ -40,6 +47,13 @@ impl DB {
   }
 
   fn as_closed(&self) -> Option<&RsonlDB<Closed>> {
+    match self {
+      DB::Closed(x) => Some(x),
+      _ => None,
+    }
+  }
+
+  fn as_closed_mut(&mut self) -> Option<&mut RsonlDB<Closed>> {
     match self {
       DB::Closed(x) => Some(x),
       _ => None,
@@ -77,18 +91,18 @@ impl JsonlDB {
   }
 
   #[napi]
-  pub fn open(&mut self) -> Result<()> {
-    let db = self.r.as_closed().ok_or(jserr!("DB is already open"))?;
-    let db = db.open()?;
+  pub async fn open(&mut self) -> Result<()> {
+    let db = self.r.as_closed_mut().ok_or(jserr!("DB is already open"))?;
+    let db = db.open().await?;
     self.r = DB::Opened(db);
 
     Ok(())
   }
 
   #[napi]
-  pub fn close(&mut self) -> Result<()> {
+  pub async fn close(&mut self) -> Result<()> {
     let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
-    let db = db.close()?;
+    let db = db.close().await?;
     self.r = DB::Closed(db);
 
     Ok(())
@@ -102,7 +116,15 @@ impl JsonlDB {
   #[napi]
   pub fn add(&mut self, key: String, value: serde_json::Value) -> Result<()> {
     let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
-    db.add(key, value)?;
+    db.add_blocking(key, value)?;
+
+    Ok(())
+  }
+
+  #[napi]
+  pub async fn add_async(&mut self, key: String, value: serde_json::Value) -> Result<()> {
+    let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
+    db.add(key, value).await?;
 
     Ok(())
   }
