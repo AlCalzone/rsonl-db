@@ -1,0 +1,29 @@
+[package]
+authors = ["AlCalzone <d.griesel@gmx.net>"]
+edition = "2021"
+name = "rsonl-db"
+version = "0.1.0"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# napi = { git = "https://github.com/zeroslope/napi-rs", branch = "fix/1013", features = ["napi4", "serde-json"] }
+# napi-derive = { git = "https://github.com/zeroslope/napi-rs", branch = "fix/1013" }
+napi = { path = "../napi-rs/crates/napi", features = ["napi4", "serde-json"] }
+napi-derive = { path = "../napi-rs/crates/macro" }
+serde = { version = "1.0.133", features = ["derive"] }
+serde_json = "1.0.74"
+
+[target.'cfg(all(any(windows, unix), target_arch = "x86_64", not(target_env = "musl")))'.dependencies]
+mimalloc = { version = "0.1" }
+
+[build-dependencies]
+napi-build = "1"
+
+[profile.release]
+lto = true
+
+[features]

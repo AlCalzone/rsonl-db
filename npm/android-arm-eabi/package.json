@@ -1,0 +1,32 @@
+{
+  "name": "@alcalzone/rsonl-db-android-arm-eabi",
+  "version": "1.0.1",
+  "os": [
+    "android"
+  ],
+  "cpu": [
+    "arm"
+  ],
+  "main": "rsonl-db.android-arm-eabi.node",
+  "files": [
+    "rsonl-db.android-arm-eabi.node"
+  ],
+  "description": "rsonl-db implementation used by the Z-Wave protocol, implemented in Rust",
+  "keywords": [
+    "napi-rs",
+    "NAPI",
+    "N-API",
+    "Rust",
+    "node-addon",
+    "node-addon-api"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">= 10"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  },
+  "repository": "https://github.com/zwave-js/rsonl-db"
+}
