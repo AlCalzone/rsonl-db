@@ -1,11 +1,16 @@
+use std::collections::VecDeque;
 use std::io::Error;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
 use tokio::fs::OpenOptions;
 use tokio::io::{AsyncWriteExt, BufWriter};
-
-use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::{self, Sender};
 use tokio::task::JoinHandle;
+use tokio::time;
+
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Entry {
@@ -25,6 +30,8 @@ pub(crate) struct Opened {
   // background thread
   thread: Box<JoinHandle<()>>,
   tx: Sender<Command>,
+  // backlogs for writing
+  write_backlog: Arc<Mutex<Vec<Entry>>>,
 }
 
 // Turn Opened/Closed into DB states
@@ -44,7 +51,6 @@ impl DBState for Opened {
 
 #[derive(Debug)]
 enum Command {
-  Write(Entry),
   Stop,
 }
 
@@ -63,31 +69,47 @@ impl RsonlDB<Closed> {
       .open(self.filename.to_owned())
       .await?;
 
-    let mut writer = BufWriter::new(file);
+    // We keep two references to the write backlog, one for putting entries in, one for reading it in the BG thread
+    let write_backlog = Arc::new(Mutex::new(Vec::<Entry>::new()));
+    let write_backlog2 = write_backlog.clone();
 
-    let (tx, mut rx) = mpsc::channel(4096);
+    let (tx, mut rx) = mpsc::channel(32);
     let thread = tokio::spawn(async move {
-      while let Some(message) = rx.recv().await {
-        match message {
-          Command::Write(entry) => {
-            let str = serde_json::to_string(&entry).unwrap();
-            writer.write(str.as_bytes()).await.unwrap();
-            writer.write(b"\n").await.unwrap();
-          }
-          Command::Stop => {
-            // Make sure everything gets written
-            writer.flush().await.unwrap();
-            return;
-          }
+      let mut writer = BufWriter::new(file);
+      let idle_duration = Duration::from_millis(100);
+
+      loop {
+        let command = time::timeout(idle_duration, rx.recv()).await;
+
+        // Grab all entries from the backlog
+        let backlog: Vec<Entry> = {
+          let mut write_backlog2 = write_backlog2.lock().unwrap();
+          write_backlog2.splice(.., []).collect()
+        };
+
+        // And print them
+        for entry in backlog.iter() {
+          let str = serde_json::to_string(&entry).unwrap();
+          writer.write(str.as_bytes()).await.unwrap();
+          writer.write(b"\n").await.unwrap();
+        }
+
+        if let Ok(Some(Command::Stop)) = command {
+          break;
         }
       }
+
+      // If we're stopping, make sure everything gets written
+      writer.flush().await.unwrap();
     });
 
+    // Change the state to Opened
     Ok(RsonlDB {
       filename: self.filename.to_owned(),
       state: Opened {
         thread: Box::new(thread),
         tx,
+        write_backlog,
       },
     })
   }
@@ -106,26 +128,13 @@ impl RsonlDB<Opened> {
     })
   }
 
-  pub fn add_blocking(&mut self, key: String, value: serde_json::Value) -> std::io::Result<()> {
+  pub fn add(&mut self, key: String, value: serde_json::Value) {
     let entry = Entry {
       k: key.to_owned(),
       v: value,
     };
 
-    self.state.tx.blocking_send(Command::Write(entry)).unwrap();
-
-    Ok(())
+    let mut write_backlog = self.state.write_backlog.lock().unwrap();
+    write_backlog.push(entry);
   }
-
-  pub async fn add(&mut self, key: String, value: serde_json::Value) -> std::io::Result<()> {
-    let entry = Entry {
-      k: key.to_owned(),
-      v: value,
-    };
-
-    self.state.tx.send(Command::Write(entry)).await.unwrap();
-
-    Ok(())
-  }
-
 }

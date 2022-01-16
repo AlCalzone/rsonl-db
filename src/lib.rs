@@ -116,18 +116,11 @@ impl JsonlDB {
   #[napi]
   pub fn add(&mut self, key: String, value: serde_json::Value) -> Result<()> {
     let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
-    db.add_blocking(key, value)?;
+    db.add(key, value);
 
     Ok(())
   }
 
-  #[napi]
-  pub async fn add_async(&mut self, key: String, value: serde_json::Value) -> Result<()> {
-    let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
-    db.add(key, value).await?;
-
-    Ok(())
-  }
 }
 
 #[napi]

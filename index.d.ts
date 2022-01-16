@@ -13,5 +13,4 @@ export class JsonlDb {
   close(): Promise<void>
   isOpen(): boolean
   add(key: string, value: any): void
-  addAsync(key: string, value: any): Promise<void>
 }
