@@ -62,6 +62,7 @@
     "@types/node": "^10",
     "@typescript-eslint/eslint-plugin": "^5.7.0",
     "@typescript-eslint/parser": "^5.7.0",
+    "alcalzone-shared": "^4.0.1",
     "ava": "^3.15.0",
     "benny": "^3.7.1",
     "chalk": "^5.0.0",

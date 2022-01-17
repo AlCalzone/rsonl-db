@@ -121,6 +121,40 @@ impl JsonlDB {
     Ok(())
   }
 
+  #[napi]
+  pub fn add_serialized(&mut self, key: String, value: String) -> Result<()> {
+    let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
+    db.add_serialized(key, value);
+
+    Ok(())
+  }
+
+  #[napi]
+  pub fn delete(&mut self, key: String) -> Result<()> {
+    let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
+    db.delete(key);
+
+    Ok(())
+  }
+
+  #[napi]
+  pub fn has(&mut self, key: String) -> Result<bool> {
+    let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
+    Ok(db.has(&key))
+  }
+
+  #[napi]
+  pub fn get(&mut self, key: String) -> Result<Option<serde_json::Value>> {
+    let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
+    Ok(db.get(&key))
+  }
+
+  #[napi]
+  pub fn clear(&mut self) -> Result<()> {
+    let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
+    db.clear();
+    Ok(())
+  }
 }
 
 #[napi]

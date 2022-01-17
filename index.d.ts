@@ -13,4 +13,9 @@ export class JsonlDb {
   close(): Promise<void>
   isOpen(): boolean
   add(key: string, value: any): void
+  addSerialized(key: string, value: string): void
+  delete(key: string): void
+  has(key: string): boolean
+  get(key: string): any | undefined | null
+  clear(): void
 }

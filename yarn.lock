@@ -410,6 +410,13 @@ ajv@^6.10.0, ajv@^6.12.4:
     json-schema-traverse "^0.4.1"
     uri-js "^4.2.2"
 
+alcalzone-shared@^4.0.1:
+  version "4.0.1"
+  resolved "https://registry.yarnpkg.com/alcalzone-shared/-/alcalzone-shared-4.0.1.tgz#1fcfb042f104a29cc8e67b0b07cb9e459ac2f9bc"
+  integrity sha512-6t0LFCIGvBG24grbV93Y1+MJjoyqgUpPOp/PkOcal1ZXXUUMEaZKPu6NfN6e3x5k2P2mnNaY2eXn/VmpWDLzYA==
+  dependencies:
+    debug "^4.3.2"
+
 ansi-align@^3.0.0:
   version "3.0.1"
   resolved "https://registry.npmjs.org/ansi-align/-/ansi-align-3.0.1.tgz#0cdf12e111ace773a86e9a1fad1225c43cb19a59"

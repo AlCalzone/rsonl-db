@@ -1,19 +1,35 @@
 /* eslint-disable */
 
+// import assert from 'assert'
 import { JsonlDb } from '.'
+import { isArray, isObject } from 'alcalzone-shared/typeguards'
 
-function makeObj(i: number) {
-  return {
-    type: 'state',
-    common: {
-      name: i.toString(),
-      read: true,
-      write: true,
-      role: 'state',
-      type: 'number',
-    },
-    native: {},
+// function makeObj(i: number) {
+//   return {
+//     type: 'state',
+//     common: {
+//       name: i.toString(),
+//       read: true,
+//       write: true,
+//       role: 'state',
+//       type: 'number',
+//     },
+//     native: {},
+//   }
+// }
+
+function needsStringify(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false
+  if (isObject(value)) {
+    // Empirically, empty objects can be handled faster without stringifying
+    for (const _key in value) return false
+    return true
+  } else if (isArray(value)) {
+    // Empirically, arrays with length < 3 are faster without stringifying
+    // Check for nested objects though
+    return value.length < 3 && !value.some((v) => needsStringify(v))
   }
+  return false
 }
 
 async function main() {
@@ -25,15 +41,26 @@ async function main() {
   let calls = 0
 
   while (Date.now() - start < 1000) {
-  // for (let i = 0; i < 10; i++) {
+    // for (let i = 0; i < 10; i++) {
     const key = `benchmark.0.test${calls}`
-    const value = makeObj(calls)
-    db.add(key, value)
+    // const value = makeObj(calls);
+    const value: any = [1, {a: "b"}, 3]
+    if (needsStringify(value)) {
+      db.addSerialized(key, JSON.stringify(value))
+    } else {
+      db.add(key, value)
+    }
+    // assert.ok(db.has(key))
+    // assert.deepStrictEqual(db.get(key), value)
+    db.delete(key)
     calls++
-  // }
+    // }
   }
 
   console.log('calls:', calls)
+
+  db.clear();
+  db.add("a", "b");
 
   await db.close()
 
