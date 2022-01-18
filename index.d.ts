@@ -1,29 +1,23 @@
-/* eslint-disable */
-
-export class ExternalObject<T> {
-  readonly '': {
-    readonly '': unique symbol
-    [K: symbol]: T
-  }
+import { JsonlDBOptions } from "./lib";
+export declare class JsonlDB<V> implements Map<string, V> {
+    private readonly db;
+    constructor(filename: string, options?: JsonlDBOptions);
+    private validateOptions;
+    open(): Promise<void>;
+    close(): Promise<void>;
+    get isOpen(): boolean;
+    clear(): void;
+    delete(key: string): boolean;
+    set(key: string, value: V): this;
+    get(key: string): V | undefined;
+    has(key: string): boolean;
+    get size(): number;
+    forEach(callback: (value: V, key: string, map: Map<string, V>) => void, thisArg?: any): void;
+    keys(): IterableIterator<string>;
+    entries(): IterableIterator<[string, V]>;
+    values(): IterableIterator<V>;
+    [Symbol.iterator](): IterableIterator<[string, V]>;
+    get [Symbol.toStringTag](): string;
 }
-export interface JsonlDBOptions {
-  ignoreReadErrors?: boolean | undefined | null
-  throttleFS?: JsonlDBOptionsThrottleFS | undefined | null
-}
-export interface JsonlDBOptionsThrottleFS {
-  intervalMs: number
-  maxBufferedCommands?: number | undefined | null
-}
-export class JsonlDB {
-  constructor(filename: string, options?: JsonlDBOptions | undefined | null)
-  open(): Promise<void>
-  close(): Promise<void>
-  isOpen(): boolean
-  add(key: string, value: any): void
-  addSerialized(key: string, value: string): void
-  delete(key: string): void
-  has(key: string): boolean
-  get(key: string): any | undefined | null
-  clear(): void
-  get size(): number
-}
+export { JsonlDBOptions, JsonlDBOptionsThrottleFS } from "./lib";
+//# sourceMappingURL=index.d.ts.map

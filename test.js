@@ -3,7 +3,6 @@
 
 // import assert from 'assert'
 const { JsonlDB } = require('.')
-const { JsonlDB: JsonlDB_JS } = require('@alcalzone/jsonl-db')
 const { isArray, isObject } = require('alcalzone-shared/typeguards')
 // import assert from 'assert'
 
@@ -39,10 +38,10 @@ function needsStringify(value) {
 async function main() {
   const db = new JsonlDB('test.txt', {
     // ignoreReadErrors: true,
-    // throttleFS: {
-    //   intervalMs: 500,
-    //   maxBufferedCommands: 100000
-    // }
+    throttleFS: {
+      intervalMs: -500,
+      //   maxBufferedCommands: 100000
+    },
   })
   // const jsdb = new JsonlDB_JS('test.txt', {
   //   ignoreReadErrors: true,
@@ -54,26 +53,32 @@ async function main() {
 
   console.log(`size: `, db.size)
 
-  // let start = Date.now()
-  // let calls = 0
+  // db.forEach((v, k) => {
+  //   console.log(k, v);
+  // });
+  // console.log("after foreach")
 
-  // while (Date.now() - start < 10000) {
-  //   // for (let i = 0; i < 10; i++) {
-  //   const key = `benchmark.0.test${calls}`
-  //   const value = makeObj(calls);
-  //   if (needsStringify(value)) {
-  //     db.addSerialized(key, JSON.stringify(value))
-  //   } else {
-  //     db.add(key, value)
-  //   }
-  //   // assert.ok(db.has(key))
-  //   // assert.deepStrictEqual(db.get(key), value)
-  //   // db.delete(key)
+  let start = Date.now()
+  let calls = 0
+
+  while (Date.now() - start < 10000) {
+    // for (let i = 0; i < 10; i++) {
+    const key = `benchmark.0.test${calls}`
+    const value = makeObj(calls)
+    db.set(key, value)
+    // assert.ok(db.has(key))
+    // assert.deepStrictEqual(db.get(key), value)
+    // db.delete(key)
+    calls++
+  }
+
+  // console.time('foreach')
+  // calls = 0
+  // db.forEach((v, k) => {
   //   calls++
-  //   // }
-  // }
-
-  // console.log('calls:', calls)
+  // })
+  // console.timeEnd('foreach')
+  console.log('calls:', calls)
 
   // db.clear();
   console.time('close RS')

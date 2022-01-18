@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::io::{Error, SeekFrom};
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -22,9 +22,19 @@ enum Entry {
   Delete { k: String },
 }
 
-enum MapValue {
-  Serialized(String),
+#[derive(Clone)]
+pub enum MapValue {
+  Stringified(String),
   Raw(serde_json::Value),
+}
+
+impl From<MapValue> for serde_json::Value {
+  fn from(val: MapValue) -> Self {
+    match val {
+      MapValue::Stringified(str) => serde_json::from_str(&str).unwrap(),
+      MapValue::Raw(v) => v,
+    }
+  }
 }
 
 pub(crate) struct RsonlDB<S: DBState> {
@@ -37,7 +47,7 @@ pub(crate) struct RsonlDB<S: DBState> {
 pub(crate) struct Closed;
 
 pub(crate) struct Opened {
-  entries: HashMap<String, MapValue>,
+  entries: BTreeMap<String, MapValue>,
   // background thread
   thread: Box<JoinHandle<()>>,
   tx: Sender<Command>,
@@ -74,8 +84,8 @@ impl RsonlDB<Closed> {
     }
   }
 
-  async fn parse_entries(&self, file: &mut File) -> Result<HashMap<String, MapValue>, Error> {
-    let mut entries = HashMap::<String, MapValue>::with_capacity(4096);
+  async fn parse_entries(&self, file: &mut File) -> Result<BTreeMap<String, MapValue>, Error> {
+    let mut entries = BTreeMap::<String, MapValue>::new();
 
     let mut lines = BufReader::new(file).lines();
     while let Some(line) = lines.next_line().await? {
@@ -227,7 +237,7 @@ impl RsonlDB<Opened> {
     })
   }
 
-  pub fn add(&mut self, key: String, value: serde_json::Value) {
+  pub fn set(&mut self, key: String, value: serde_json::Value) {
     let str = serde_json::to_string(&Entry::Value {
       k: key.to_owned(),
       v: value.clone(),
@@ -240,7 +250,7 @@ impl RsonlDB<Opened> {
     write_backlog.push(str);
   }
 
-  pub fn add_serialized(&mut self, key: String, value: String) {
+  pub fn set_stringified(&mut self, key: String, value: String) {
     let str = format!(
       "{{\"k\":{},\"v\":{}}}",
       serde_json::to_string(&key).unwrap(),
@@ -250,15 +260,15 @@ impl RsonlDB<Opened> {
     self
       .state
       .entries
-      .insert(key, MapValue::Serialized(value.clone()));
+      .insert(key, MapValue::Stringified(value.clone()));
 
     let mut write_backlog = self.state.write_backlog.lock().unwrap();
     write_backlog.push(str);
   }
 
-  pub fn delete(&mut self, key: String) {
+  pub fn delete(&mut self, key: String) -> bool {
     if !self.has(&key) {
-      return;
+      return false;
     };
 
     let str = serde_json::to_string(&Entry::Delete { k: key.to_owned() }).unwrap();
@@ -269,6 +279,8 @@ impl RsonlDB<Opened> {
       let mut write_backlog = self.state.write_backlog.lock().unwrap();
       write_backlog.push(str);
     }
+
+    true
   }
 
   pub fn clear(&mut self) {
@@ -287,12 +299,20 @@ impl RsonlDB<Opened> {
   pub fn get(&self, key: &String) -> Option<serde_json::Value> {
     match self.state.entries.get(key) {
       Some(MapValue::Raw(val)) => Some(val.clone()),
-      Some(MapValue::Serialized(str)) => Some(serde_json::Value::from_str(&str.clone()).unwrap()),
+      Some(MapValue::Stringified(str)) => Some(serde_json::Value::from_str(&str.clone()).unwrap()),
       None => None,
     }
   }
 
   pub fn size(&self) -> usize {
     self.state.entries.len()
+  }
+
+  pub fn keys(&self) -> std::collections::btree_map::Keys<String, MapValue> {
+    self.state.entries.keys()
+  }
+
+  pub fn entries(&self) -> std::collections::btree_map::Iter<String, MapValue> {
+    self.state.entries.iter()
   }
 }

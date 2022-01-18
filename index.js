@@ -1,197 +1,148 @@
-const { existsSync, readFileSync } = require('fs')
-const { join } = require('path')
-
-const { platform, arch } = process
-
-let nativeBinding = null
-let localFileExisted = false
-let isMusl = false
-let loadError = null
-
-switch (platform) {
-  case 'android':
-    if (arch !== 'arm64') {
-      throw new Error(`Unsupported architecture on Android ${arch}`)
-    }
-    localFileExisted = existsSync(join(__dirname, 'rsonl-db.android-arm64.node'))
-    try {
-      if (localFileExisted) {
-        nativeBinding = require('./rsonl-db.android-arm64.node')
-      } else {
-        nativeBinding = require('@alcalzone/rsonl-db-android-arm64')
-      }
-    } catch (e) {
-      loadError = e
-    }
-    break
-  case 'win32':
-    switch (arch) {
-      case 'x64':
-        localFileExisted = existsSync(join(__dirname, 'rsonl-db.win32-x64-msvc.node'))
-        try {
-          if (localFileExisted) {
-            nativeBinding = require('./rsonl-db.win32-x64-msvc.node')
-          } else {
-            nativeBinding = require('@alcalzone/rsonl-db-win32-x64-msvc')
-          }
-        } catch (e) {
-          loadError = e
-        }
-        break
-      case 'ia32':
-        localFileExisted = existsSync(join(__dirname, 'rsonl-db.win32-ia32-msvc.node'))
-        try {
-          if (localFileExisted) {
-            nativeBinding = require('./rsonl-db.win32-ia32-msvc.node')
-          } else {
-            nativeBinding = require('@alcalzone/rsonl-db-win32-ia32-msvc')
-          }
-        } catch (e) {
-          loadError = e
-        }
-        break
-      case 'arm64':
-        localFileExisted = existsSync(join(__dirname, 'rsonl-db.win32-arm64-msvc.node'))
-        try {
-          if (localFileExisted) {
-            nativeBinding = require('./rsonl-db.win32-arm64-msvc.node')
-          } else {
-            nativeBinding = require('@alcalzone/rsonl-db-win32-arm64-msvc')
-          }
-        } catch (e) {
-          loadError = e
-        }
-        break
-      default:
-        throw new Error(`Unsupported architecture on Windows: ${arch}`)
-    }
-    break
-  case 'darwin':
-    switch (arch) {
-      case 'x64':
-        localFileExisted = existsSync(join(__dirname, 'rsonl-db.darwin-x64.node'))
-        try {
-          if (localFileExisted) {
-            nativeBinding = require('./rsonl-db.darwin-x64.node')
-          } else {
-            nativeBinding = require('@alcalzone/rsonl-db-darwin-x64')
-          }
-        } catch (e) {
-          loadError = e
-        }
-        break
-      case 'arm64':
-        localFileExisted = existsSync(join(__dirname, 'rsonl-db.darwin-arm64.node'))
-        try {
-          if (localFileExisted) {
-            nativeBinding = require('./rsonl-db.darwin-arm64.node')
-          } else {
-            nativeBinding = require('@alcalzone/rsonl-db-darwin-arm64')
-          }
-        } catch (e) {
-          loadError = e
-        }
-        break
-      default:
-        throw new Error(`Unsupported architecture on macOS: ${arch}`)
-    }
-    break
-  case 'freebsd':
-    if (arch !== 'x64') {
-      throw new Error(`Unsupported architecture on FreeBSD: ${arch}`)
-    }
-    localFileExisted = existsSync(join(__dirname, 'rsonl-db.freebsd-x64.node'))
-    try {
-      if (localFileExisted) {
-        nativeBinding = require('./rsonl-db.freebsd-x64.node')
-      } else {
-        nativeBinding = require('@alcalzone/rsonl-db-freebsd-x64')
-      }
-    } catch (e) {
-      loadError = e
-    }
-    break
-  case 'linux':
-    switch (arch) {
-      case 'x64':
-        isMusl = readFileSync('/usr/bin/ldd', 'utf8').includes('musl')
-        if (isMusl) {
-          localFileExisted = existsSync(join(__dirname, 'rsonl-db.linux-x64-musl.node'))
-          try {
-            if (localFileExisted) {
-              nativeBinding = require('./rsonl-db.linux-x64-musl.node')
-            } else {
-              nativeBinding = require('@alcalzone/rsonl-db-linux-x64-musl')
-            }
-          } catch (e) {
-            loadError = e
-          }
-        } else {
-          localFileExisted = existsSync(join(__dirname, 'rsonl-db.linux-x64-gnu.node'))
-          try {
-            if (localFileExisted) {
-              nativeBinding = require('./rsonl-db.linux-x64-gnu.node')
-            } else {
-              nativeBinding = require('@alcalzone/rsonl-db-linux-x64-gnu')
-            }
-          } catch (e) {
-            loadError = e
-          }
-        }
-        break
-      case 'arm64':
-        isMusl = readFileSync('/usr/bin/ldd', 'utf8').includes('musl')
-        if (isMusl) {
-          localFileExisted = existsSync(join(__dirname, 'rsonl-db.linux-arm64-musl.node'))
-          try {
-            if (localFileExisted) {
-              nativeBinding = require('./rsonl-db.linux-arm64-musl.node')
-            } else {
-              nativeBinding = require('@alcalzone/rsonl-db-linux-arm64-musl')
-            }
-          } catch (e) {
-            loadError = e
-          }
-        } else {
-          localFileExisted = existsSync(join(__dirname, 'rsonl-db.linux-arm64-gnu.node'))
-          try {
-            if (localFileExisted) {
-              nativeBinding = require('./rsonl-db.linux-arm64-gnu.node')
-            } else {
-              nativeBinding = require('@alcalzone/rsonl-db-linux-arm64-gnu')
-            }
-          } catch (e) {
-            loadError = e
-          }
-        }
-        break
-      case 'arm':
-        localFileExisted = existsSync(join(__dirname, 'rsonl-db.linux-arm-gnueabihf.node'))
-        try {
-          if (localFileExisted) {
-            nativeBinding = require('./rsonl-db.linux-arm-gnueabihf.node')
-          } else {
-            nativeBinding = require('@alcalzone/rsonl-db-linux-arm-gnueabihf')
-          }
-        } catch (e) {
-          loadError = e
-        }
-        break
-      default:
-        throw new Error(`Unsupported architecture on Linux: ${arch}`)
-    }
-    break
-  default:
-    throw new Error(`Unsupported OS: ${platform}, architecture: ${arch}`)
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.JsonlDB = void 0;
+const lib_1 = require("./lib");
+/**
+ * Tests whether the given variable is a real object and not an Array
+ * @param it The variable to test
+ */
+function isObject(it) {
+    // This is necessary because:
+    // typeof null === 'object'
+    // typeof [] === 'object'
+    // [] instanceof Object === true
+    return Object.prototype.toString.call(it) === "[object Object]";
 }
-
-if (!nativeBinding) {
-  if (loadError) {
-    throw loadError
-  }
-  throw new Error(`Failed to load native binding`)
+/**
+ * Tests whether the given variable is really an Array
+ * @param it The variable to test
+ */
+function isArray(it) {
+    if (Array.isArray != null)
+        return Array.isArray(it);
+    return Object.prototype.toString.call(it) === "[object Array]";
 }
-
-const { JsonlDB } = nativeBinding
-
-module.exports.JsonlDB = JsonlDB
+/** Checks whether a value should be stringified before passing to Rust */
+function needsStringify(value) {
+    if (!value || typeof value !== "object")
+        return false;
+    if (isObject(value)) {
+        // Empirically, empty objects can be handled faster without stringifying
+        for (const _key in value)
+            return true;
+        return false;
+    }
+    else if (isArray(value)) {
+        // Empirically, arrays with length < 3 are faster without stringifying
+        // Check for nested objects though
+        return value.length < 3 && !value.some((v) => needsStringify(v));
+    }
+    return false;
+}
+class JsonlDB {
+    constructor(filename, options = {}) {
+        this.validateOptions(options);
+        this.db = new lib_1.JsonlDB(filename, options);
+    }
+    validateOptions(options /*<V>*/) {
+        // @ts-expect-error
+        if (options.autoCompress) {
+            const { sizeFactor, sizeFactorMinimumSize, intervalMs, intervalMinChanges,
+            // @ts-expect-error
+             } = options.autoCompress;
+            if (sizeFactor != undefined && sizeFactor <= 1) {
+                throw new Error("sizeFactor must be > 1");
+            }
+            if (sizeFactorMinimumSize != undefined &&
+                sizeFactorMinimumSize < 0) {
+                throw new Error("sizeFactorMinimumSize must be >= 0");
+            }
+            if (intervalMs != undefined && intervalMs < 10) {
+                throw new Error("intervalMs must be >= 10");
+            }
+            if (intervalMinChanges != undefined && intervalMinChanges < 1) {
+                throw new Error("intervalMinChanges must be >= 1");
+            }
+        }
+        if (options.throttleFS) {
+            const { intervalMs, maxBufferedCommands } = options.throttleFS;
+            if (intervalMs < 0) {
+                throw new Error("intervalMs must be >= 0");
+            }
+            if (maxBufferedCommands != undefined && maxBufferedCommands < 0) {
+                throw new Error("maxBufferedCommands must be >= 0");
+            }
+        }
+    }
+    open() {
+        return this.db.open();
+    }
+    close() {
+        return this.db.close();
+    }
+    get isOpen() {
+        return this.db.isOpen();
+    }
+    clear() {
+        this.db.clear();
+        throw new Error("Method not implemented.");
+    }
+    delete(key) {
+        return this.db.delete(key);
+    }
+    // The set method is more performant for some values when we stringify them in JS code
+    set(key, value) {
+        if (needsStringify(value)) {
+            this.db.setStringified(key, JSON.stringify(value));
+        }
+        else {
+            this.db.set(key, value);
+        }
+        return this;
+    }
+    get(key) {
+        return this.db.get(key);
+    }
+    has(key) {
+        return this.db.has(key);
+    }
+    get size() {
+        return this.db.size;
+    }
+    forEach(callback, thisArg) {
+        this.db.forEach((v, k) => {
+            callback.call(thisArg, v, k, this);
+        });
+    }
+    keys() {
+        const that = this;
+        return (function* () {
+            const allKeys = that.db.getKeys();
+            for (const k of allKeys)
+                yield k;
+        })();
+    }
+    entries() {
+        const that = this;
+        return (function* () {
+            for (const k of that.keys()) {
+                yield [k, that.get(k)];
+            }
+        })();
+    }
+    values() {
+        const that = this;
+        return (function* () {
+            for (const k of that.keys()) {
+                yield that.get(k);
+            }
+        })();
+    }
+    [Symbol.iterator]() {
+        return this.entries();
+    }
+    get [Symbol.toStringTag]() {
+        return "JsonlDB";
+    }
+}
+exports.JsonlDB = JsonlDB;

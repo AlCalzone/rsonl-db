@@ -14,8 +14,8 @@
     "node-addon-api"
   ],
   "files": [
-    "index.d.ts",
-    "index.js"
+    "index.*",
+    "lib.*"
   ],
   "napi": {
     "name": "rsonl-db",
@@ -33,7 +33,9 @@
         "aarch64-pc-windows-msvc",
         "armv7-linux-androideabi"
       ]
-    }
+    },
+    "js": "lib.js",
+    "dts": "lib.d.ts"
   },
   "engines": {
     "node": ">= 10"
@@ -45,9 +47,10 @@
   "scripts": {
     "artifacts": "napi artifacts",
     "bench": "node -r @swc-node/register benchmark/bench.ts",
-    "rebuild": "rm -rf target index.* && yarn build",
-    "build": "napi build --platform --release --pipe \"prettier -w\"",
-    "build:debug": "napi build --platform --pipe \"prettier -w\"",
+    "rebuild": "rm -rf target lib.js lib.d.ts && yarn build",
+    "build": "napi build --platform --release --js lib.js --dts lib.d.ts --pipe \"prettier -w\"",
+    "build:debug": "napi build --platform --js lib.js --dts lib.d.ts --pipe \"prettier -w\"",
+    "build:ts": "tsc -p tsconfig.build.json",
     "format": "run-p format:prettier format:rs",
     "format:prettier": "prettier . -w",
     "format:rs": "cargo fmt",
@@ -108,12 +111,5 @@
     "environmentVariables": {
       "TS_NODE_PROJECT": "./tsconfig.json"
     }
-  },
-  "prettier": {
-    "printWidth": 120,
-    "semi": false,
-    "trailingComma": "all",
-    "singleQuote": true,
-    "arrowParens": "always"
   }
 }

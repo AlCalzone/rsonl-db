@@ -1,1 +1,10 @@
+CHANGELOG.md
+README.md
+package.json
+package-lock.json
+build/
+.github/workflows/
+.github/actions
+!.github/actions/**/*.js
+cache/
 target
