@@ -6,9 +6,16 @@ export class ExternalObject<T> {
     [K: symbol]: T
   }
 }
-export function serializeTest(str: any): string
-export class JsonlDb {
-  constructor(filename: string)
+export interface JsonlDBOptions {
+  ignoreReadErrors?: boolean | undefined | null
+  throttleFS?: JsonlDBOptionsThrottleFS | undefined | null
+}
+export interface JsonlDBOptionsThrottleFS {
+  intervalMs: number
+  maxBufferedCommands?: number | undefined | null
+}
+export class JsonlDB {
+  constructor(filename: string, options?: JsonlDBOptions | undefined | null)
   open(): Promise<void>
   close(): Promise<void>
   isOpen(): boolean
@@ -18,4 +25,5 @@ export class JsonlDb {
   has(key: string): boolean
   get(key: string): any | undefined | null
   clear(): void
+  get size(): number
 }

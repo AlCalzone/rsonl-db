@@ -192,7 +192,6 @@ if (!nativeBinding) {
   throw new Error(`Failed to load native binding`)
 }
 
-const { JsonlDb, serializeTest } = nativeBinding
+const { JsonlDB } = nativeBinding
 
-module.exports.JsonlDb = JsonlDb
-module.exports.serializeTest = serializeTest
+module.exports.JsonlDB = JsonlDB

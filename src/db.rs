@@ -5,23 +5,21 @@ use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use tokio::fs::OpenOptions;
-use tokio::io::{AsyncWriteExt, BufWriter, AsyncSeekExt};
+use tokio::fs::{File, OpenOptions};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeekExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio::sync::mpsc::{self, Sender};
 use tokio::task::JoinHandle;
-use tokio::time;
+use tokio::time::{self, Instant};
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Debug)]
-struct Entry {
-  k: String,
-  v: serde_json::Value,
-}
+use crate::db_options::DBOptions;
 
 #[derive(Serialize, Deserialize, Debug)]
-struct DeleteEntry {
-  k: String,
+#[serde(untagged)]
+enum Entry {
+  Value { k: String, v: serde_json::Value },
+  Delete { k: String },
 }
 
 enum MapValue {
@@ -31,6 +29,7 @@ enum MapValue {
 
 pub(crate) struct RsonlDB<S: DBState> {
   pub filename: PathBuf,
+  options: DBOptions,
   pub state: S,
 }
 
@@ -67,20 +66,66 @@ enum Command {
 }
 
 impl RsonlDB<Closed> {
-  pub fn new(filename: PathBuf) -> Self {
+  pub fn new(filename: PathBuf, options: DBOptions) -> Self {
     RsonlDB {
       filename,
+      options,
       state: Closed,
     }
   }
 
+  async fn parse_entries(&self, file: &mut File) -> Result<HashMap<String, MapValue>, Error> {
+    let mut entries = HashMap::<String, MapValue>::with_capacity(4096);
+
+    let mut lines = BufReader::new(file).lines();
+    while let Some(line) = lines.next_line().await? {
+      let entry = serde_json::from_str::<Entry>(&line);
+      match entry {
+        Ok(Entry::Value { k, v }) => {
+          entries.insert(k, MapValue::Raw(v));
+        }
+        Ok(Entry::Delete { k }) => {
+          entries.remove(&k);
+        }
+        Err(e) => {
+          if self.options.ignore_read_errors {
+            // ignore read errors
+          } else {
+            return Err(e.into());
+          }
+        }
+      }
+    }
+
+    Ok(entries)
+  }
+
+  async fn check_lf(&self, file: &mut File) -> Result<bool, Error> {
+    if file.metadata().await?.len() > 0 {
+      file.seek(SeekFrom::End(-1)).await?;
+      Ok(file.read_u8().await.map_or(true, |v| v != 10))
+    } else {
+      // Empty files don't need an extra \n
+      Ok(false)
+    }
+  }
+
   pub async fn open(&self) -> Result<RsonlDB<Opened>, Error> {
-    let file = OpenOptions::new()
+    let mut file = OpenOptions::new()
       .read(true)
-      .append(true)
-      .share_mode(3)
+      .write(true)
       .open(self.filename.to_owned())
       .await?;
+
+    // Read the entire file. This also puts the cursor at the end, so we can start writing
+    let entries = self.parse_entries(&mut file).await?;
+
+    // Check if the file ends with \n
+    let mut needs_lf = self.check_lf(&mut file).await?;
+
+    // Pass some options to the write thread
+    let throttle_interval: u128 = self.options.throttle_fs.interval_ms.into();
+    let max_buffered_commands: usize = self.options.throttle_fs.max_buffered_commands.into();
 
     // We keep two references to the write backlog, one for putting entries in, one for reading it in the BG thread
     let write_backlog = Arc::new(Mutex::new(Vec::<String>::new()));
@@ -89,14 +134,34 @@ impl RsonlDB<Closed> {
     let (tx, mut rx) = mpsc::channel(32);
     let thread = tokio::spawn(async move {
       let mut writer = BufWriter::new(file);
-      let idle_duration = Duration::from_millis(100);
+      let idle_duration = Duration::from_millis(20);
+
+      let mut last_write = Instant::now();
 
       loop {
         let command = time::timeout(idle_duration, rx.recv()).await;
+        let got_stop_command = match command {
+          Ok(Some(Command::Stop)) => true,
+          _ => false,
+        };
+
+        let mut must_write = got_stop_command
+          || Instant::now().duration_since(last_write).as_millis() >= throttle_interval;
 
         // Grab all entries from the backlog
         let backlog: Vec<String> = {
           let mut write_backlog2 = write_backlog2.lock().unwrap();
+
+          if !must_write && write_backlog2.len() > 0 && write_backlog2.len() > max_buffered_commands
+          {
+            must_write = true;
+          }
+
+          // If nothing needs to be written, wait for the next iteration
+          if !must_write {
+            continue;
+          }
+
           write_backlog2.splice(.., []).collect()
         };
 
@@ -104,16 +169,25 @@ impl RsonlDB<Closed> {
         for str in backlog.iter() {
           if str == "" {
             // Truncate the file
-            writer.get_ref().set_len(0).await.unwrap();
             writer.seek(SeekFrom::Start(0)).await.unwrap();
+            writer.get_ref().set_len(0).await.unwrap();
+            needs_lf = false;
           } else {
+            if needs_lf {
+              writer.write(b"\n").await.unwrap();
+            }
             writer.write(str.as_bytes()).await.unwrap();
             writer.write(b"\n").await.unwrap();
-
+            needs_lf = false;
           }
         }
 
-        if let Ok(Some(Command::Stop)) = command {
+        // Remember if we wrote something
+        if backlog.len() > 0 {
+          last_write = Instant::now();
+        }
+
+        if got_stop_command {
           break;
         }
       }
@@ -122,13 +196,10 @@ impl RsonlDB<Closed> {
       writer.flush().await.unwrap();
     });
 
-    let entries = HashMap::<String, MapValue>::with_capacity(4096);
-
-    // TODO: read from file
-
     // Change the state to Opened
     Ok(RsonlDB {
       filename: self.filename.to_owned(),
+      options: self.options.clone(),
       state: Opened {
         entries,
         thread: Box::new(thread),
@@ -145,15 +216,19 @@ impl RsonlDB<Opened> {
     self.state.tx.send(Command::Stop).await.unwrap();
     self.state.thread.as_mut().await?;
 
+    // Free memory
+    drop(&self.state);
+
     // Change DB state to closed
     Ok(RsonlDB {
+      options: self.options.clone(),
       filename: self.filename.to_owned(),
       state: Closed,
     })
   }
 
   pub fn add(&mut self, key: String, value: serde_json::Value) {
-    let str = serde_json::to_string(&Entry {
+    let str = serde_json::to_string(&Entry::Value {
       k: key.to_owned(),
       v: value.clone(),
     })
@@ -186,7 +261,7 @@ impl RsonlDB<Opened> {
       return;
     };
 
-    let str = serde_json::to_string(&DeleteEntry { k: key.to_owned() }).unwrap();
+    let str = serde_json::to_string(&Entry::Delete { k: key.to_owned() }).unwrap();
 
     self.state.entries.remove(&key);
 
@@ -215,5 +290,9 @@ impl RsonlDB<Opened> {
       Some(MapValue::Serialized(str)) => Some(serde_json::Value::from_str(&str.clone()).unwrap()),
       None => None,
     }
+  }
+
+  pub fn size(&self) -> usize {
+    self.state.entries.len()
   }
 }

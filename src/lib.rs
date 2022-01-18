@@ -5,6 +5,9 @@ use std::path::Path;
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 
+#[macro_use]
+extern crate derive_builder;
+
 #[cfg(all(
   any(windows, unix),
   target_arch = "x86_64",
@@ -15,9 +18,14 @@ use napi_derive::napi;
 static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 mod db;
+mod db_options;
+mod jsonldb_options;
+
 #[macro_use]
 mod error;
 use db::{Closed, Opened, RsonlDB};
+use jsonldb_options::JsonlDBOptions;
+
 
 enum DB {
   Closed(RsonlDB<Closed>),
@@ -32,23 +40,9 @@ impl DB {
     }
   }
 
-  fn as_opened(&self) -> Option<&RsonlDB<Opened>> {
-    match self {
-      DB::Opened(x) => Some(x),
-      _ => None,
-    }
-  }
-
   fn as_opened_mut(&mut self) -> Option<&mut RsonlDB<Opened>> {
     match self {
       DB::Opened(x) => Some(x),
-      _ => None,
-    }
-  }
-
-  fn as_closed(&self) -> Option<&RsonlDB<Closed>> {
-    match self {
-      DB::Closed(x) => Some(x),
       _ => None,
     }
   }
@@ -59,34 +53,20 @@ impl DB {
       _ => None,
     }
   }
-
-  // fn into_opened(self) -> Option<RsonlDB<Opened>> {
-  //   match self {
-  //     DB::Opened(x) => Some(x),
-  //     _ => None,
-  //   }
-  // }
-
-  // fn into_closed(self) -> Option<RsonlDB<Closed>> {
-  //   match self {
-  //     DB::Closed(x) => Some(x),
-  //     _ => None,
-  //   }
-  // }
 }
 
-#[napi]
+#[napi(js_name = "JsonlDB")]
 pub struct JsonlDB {
   r: DB,
 }
 
-#[napi]
+#[napi(js_name = "JsonlDB")]
 impl JsonlDB {
   #[napi(constructor)]
-  pub fn new(filename: String) -> Self {
+  pub fn new(filename: String, options: Option<JsonlDBOptions>) -> Self {
     let path = Path::new(&filename);
     JsonlDB {
-      r: DB::Closed(RsonlDB::new(path.to_owned())),
+      r: DB::Closed(RsonlDB::new(path.to_owned(), options.into())),
     }
   }
 
@@ -155,9 +135,10 @@ impl JsonlDB {
     db.clear();
     Ok(())
   }
-}
 
-#[napi]
-pub fn serialize_test(str: serde_json::Value) -> String {
-  str.to_string()
+  #[napi(getter)]
+  pub fn size(&mut self) -> Result<u32> {
+    let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
+    Ok(db.size() as u32)
+  }
 }

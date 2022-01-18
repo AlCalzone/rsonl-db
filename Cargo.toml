@@ -10,13 +10,14 @@ version = "0.1.0"
 crate-type = ["cdylib"]
 
 [dependencies]
+derive_builder = "0.10.2"
 # napi = { git = "https://github.com/zeroslope/napi-rs", branch = "fix/1013", features = ["napi4", "serde-json"] }
 # napi-derive = { git = "https://github.com/zeroslope/napi-rs", branch = "fix/1013" }
 napi = { path = "../napi-rs/crates/napi", features = ["napi4", "serde-json", "tokio_rt"] }
 napi-derive = { path = "../napi-rs/crates/macro" }
 serde = { version = "1.0.133", features = ["derive"] }
 serde_json = "1.0.74"
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = ["fs", "time", "io-util"] }
 
 [target.'cfg(all(any(windows, unix), target_arch = "x86_64", not(target_env = "musl")))'.dependencies]
 mimalloc = { version = "0.1" }
@@ -26,5 +27,6 @@ napi-build = "1"
 
 [profile.release]
 lto = true
+# opt-level = "z"  # Optimize for size.
 
 [features]
