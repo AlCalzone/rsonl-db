@@ -6,54 +6,15 @@ use std::time::Duration;
 
 use indexmap::IndexMap;
 use tokio::fs::{File, OpenOptions};
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeekExt, AsyncWriteExt, BufReader, BufWriter};
-use tokio::sync::mpsc::{self};
+use tokio::io::{AsyncSeekExt, AsyncWriteExt, BufWriter};
+use tokio::sync::mpsc;
 
 use tokio::time::{self, Instant};
 
-use serde::{Deserialize, Serialize};
-
-use crate::bg_thread::{ThreadHandle, Command};
+use crate::bg_thread::{Command, ThreadHandle};
 use crate::db_options::DBOptions;
-
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(untagged)]
-enum Entry {
-  Value { k: String, v: serde_json::Value },
-  Delete { k: String },
-}
-
-#[derive(Clone)]
-pub enum MapValue {
-  Stringified(String),
-  Raw(serde_json::Value),
-}
-
-impl From<MapValue> for serde_json::Value {
-  fn from(val: MapValue) -> Self {
-    match val {
-      MapValue::Stringified(str) => serde_json::from_str(&str).unwrap(),
-      MapValue::Raw(v) => v,
-    }
-  }
-}
-
-impl Into<String> for MapValue {
-  fn into(self) -> String {
-    match self {
-      MapValue::Stringified(str) => str,
-      MapValue::Raw(v) => serde_json::to_string(&v).unwrap(),
-    }
-  }
-}
-
-fn format_line(key: &str, val: MapValue) -> String {
-  format!(
-    "{{\"k\":{},\"v\":{}}}",
-    serde_json::to_string(key).unwrap(),
-    <MapValue as Into<String>>::into(val)
-  )
-}
+use crate::entry::{format_line, parse_entries, Entry, MapValue};
+use crate::util::file_needs_lf;
 
 pub(crate) struct RsonlDB<S: DBState> {
   pub filename: PathBuf,
@@ -73,8 +34,6 @@ pub(crate) struct Opened {
   uncompressed_size: usize,
   changes_since_compress: usize,
 }
-
-
 
 // Turn Opened/Closed into DB states
 pub(crate) trait DBState {
@@ -123,49 +82,12 @@ impl Opened {
   }
 }
 
-
 impl RsonlDB<Closed> {
   pub fn new(filename: PathBuf, options: DBOptions) -> Self {
     RsonlDB {
       filename,
       options,
       state: Closed,
-    }
-  }
-
-  async fn parse_entries(&self, file: &mut File) -> Result<IndexMap<String, MapValue>, Error> {
-    let mut entries = IndexMap::<String, MapValue>::new();
-
-    let mut lines = BufReader::new(file).lines();
-    while let Some(line) = lines.next_line().await? {
-      let entry = serde_json::from_str::<Entry>(&line);
-      match entry {
-        Ok(Entry::Value { k, v }) => {
-          entries.insert(k, MapValue::Raw(v));
-        }
-        Ok(Entry::Delete { k }) => {
-          entries.remove(&k);
-        }
-        Err(e) => {
-          if self.options.ignore_read_errors {
-            // ignore read errors
-          } else {
-            return Err(e.into());
-          }
-        }
-      }
-    }
-
-    Ok(entries)
-  }
-
-  async fn check_lf(&self, file: &mut File) -> Result<bool, Error> {
-    if file.metadata().await?.len() > 0 {
-      file.seek(SeekFrom::End(-1)).await?;
-      Ok(file.read_u8().await.map_or(true, |v| v != 10))
-    } else {
-      // Empty files don't need an extra \n
-      Ok(false)
     }
   }
 
@@ -178,10 +100,10 @@ impl RsonlDB<Closed> {
       .await?;
 
     // Read the entire file. This also puts the cursor at the end, so we can start writing
-    let entries = self.parse_entries(&mut file).await?;
+    let entries = parse_entries(&mut file, self.options.ignore_read_errors).await?;
 
     // Check if the file ends with \n
-    let needs_lf = self.check_lf(&mut file).await?;
+    let needs_lf = file_needs_lf(&mut file).await?;
 
     // Pass some options to the write thread
     let throttle_interval: u128 = self.options.throttle_fs.interval_ms.into();
@@ -196,9 +118,9 @@ impl RsonlDB<Closed> {
     let write_thread = tokio::spawn(async move {
       write_thread(
         file,
+        write_backlog_out,
         write_rx,
         throttle_interval,
-        write_backlog_out,
         max_buffered_commands,
         needs_lf,
       )
@@ -226,9 +148,9 @@ impl RsonlDB<Closed> {
 
 async fn write_thread(
   file: File,
+  write_backlog: Arc<Mutex<Vec<String>>>,
   mut write_rx: mpsc::Receiver<Command>,
   throttle_interval: u128,
-  write_backlog: Arc<Mutex<Vec<String>>>,
   max_buffered_commands: usize,
   mut needs_lf: bool,
 ) {
@@ -272,7 +194,6 @@ async fn write_thread(
           writer.write(b"\n").await.unwrap();
         }
         writer.write(str.as_bytes()).await.unwrap();
-        writer.write(b"\n").await.unwrap();
         needs_lf = false;
       }
     }
@@ -320,12 +241,7 @@ impl RsonlDB<Opened> {
   }
 
   pub fn set_stringified(&mut self, key: String, value: String) {
-    let str = format!(
-      "{{\"k\":{},\"v\":{}}}",
-      serde_json::to_string(&key).unwrap(),
-      value
-    );
-
+    let str = format_line(&key, &value);
     {
       let mut entries = self.state.entries.lock().unwrap();
       entries.insert(key, MapValue::Stringified(value.clone()));
@@ -418,7 +334,6 @@ impl RsonlDB<Opened> {
       // Print all items
       for (key, val) in data {
         writer.write(format_line(&key, val).as_bytes()).await?;
-        writer.write(b"\n").await?;
       }
 
       // Then print whatever is left in the backlog
@@ -435,7 +350,6 @@ impl RsonlDB<Opened> {
           writer.get_ref().set_len(0).await?;
         } else {
           writer.write(str.as_bytes()).await?;
-          writer.write(b"\n").await?;
         }
       }
 
