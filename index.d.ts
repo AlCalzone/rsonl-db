@@ -7,6 +7,7 @@ export declare class JsonlDB<V> implements Map<string, V> {
     close(): Promise<void>;
     get isOpen(): boolean;
     dump(filename: string): Promise<void>;
+    compress(): Promise<void>;
     clear(): void;
     delete(key: string): boolean;
     set(key: string, value: V): this;

@@ -1,7 +1,5 @@
 #![deny(clippy::all)]
 
-use std::path::Path;
-
 use db_options::DBOptions;
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
@@ -67,11 +65,10 @@ pub struct JsonlDB {
 impl JsonlDB {
   #[napi(constructor)]
   pub fn new(filename: String, options: Option<JsonlDBOptions>) -> Result<Self> {
-    let path = Path::new(&filename);
     let options: DBOptions = options.into();
 
     Ok(JsonlDB {
-      r: DB::Closed(RsonlDB::new(path.to_owned(), options)),
+      r: DB::Closed(RsonlDB::new(filename, options)),
     })
   }
 
@@ -97,6 +94,14 @@ impl JsonlDB {
   pub async fn dump(&mut self, filename: String) -> Result<()> {
     let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
     db.dump(&filename).await?;
+
+    Ok(())
+  }
+
+  #[napi]
+  pub async fn compress(&mut self) -> Result<()> {
+    let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
+    db.compress().await?;
 
     Ok(())
   }

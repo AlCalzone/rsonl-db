@@ -96,6 +96,16 @@ export class JsonlDB<V> implements Map<string, V> {
 		return this.db.dump(filename);
 	}
 
+	private _compressPromise: Promise<void> | undefined;
+	public async compress(): Promise<void> {
+		// We REALLY don't want to compress twice in parallel
+		if (!this._compressPromise) {
+			this._compressPromise = this.db.compress();
+		}
+		await this._compressPromise;
+		this._compressPromise = undefined;
+	}
+
 	public clear(): void {
 		this.db.clear();
 		throw new Error("Method not implemented.");

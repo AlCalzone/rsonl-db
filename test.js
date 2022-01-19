@@ -36,8 +36,8 @@ function needsStringify(value) {
 }
 
 async function main() {
-	debugger
-	const db = new JsonlDB("test.txt", {
+	debugger;
+	const db = new JsonlDB(`${__dirname}/test.txt`, {
 		// ignoreReadErrors: true,
 		throttleFS: {
 			intervalMs: 500,
@@ -68,7 +68,10 @@ async function main() {
 	console.log("calls:", calls);
 
 	// console.time("dump");
-	let dumpPromise = db.dump("test.dump.txt");
+	let compressPromise1 = db.compress().then(() => console.log("compress 1"));
+	let compressPromise2 = db.compress().then(() => console.log("compress 2"));
+	let compressPromise3 = db.compress().then(() => console.log("compress 3"));
+	// let dumpPromise = db.dump("test.dump.txt");
 	//   while (Date.now() - start < 10000) {
 	for (let i = 0; i < 10000; i++) {
 		const key = `backlog${i}`;
@@ -76,7 +79,7 @@ async function main() {
 		db.set(key, value);
 		// calls++
 	}
-	await dumpPromise;
+	await Promise.all([compressPromise1, compressPromise2, compressPromise3]);
 
 	// console.timeEnd("dump");
 
@@ -85,7 +88,7 @@ async function main() {
 	await db.close();
 	console.timeEnd("close RS");
 
-	debugger
+	debugger;
 
 	// console.time('open JS')
 	// await jsdb.open()

@@ -86,6 +86,9 @@ class JsonlDB {
     dump(filename) {
         return this.db.dump(filename);
     }
+    compress() {
+        return this.db.compress();
+    }
     clear() {
         this.db.clear();
         throw new Error("Method not implemented.");

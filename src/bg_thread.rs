@@ -18,6 +18,15 @@ pub(crate) struct ThreadHandle<T> {
   pub tx: Option<Sender<Command>>,
 }
 
+pub fn push_backlog(backlog: &mut Backlog, line: &str) {
+  let mut backlog = backlog.lock().unwrap();
+  if line == "" {
+    backlog.clear()
+  } else {
+    backlog.push(line.to_owned());
+  }
+}
+
 impl<T> ThreadHandle<T> {
   pub async fn stop_and_join(&mut self) -> Result<Option<T>, JoinError> {
     if let Some(thread) = self.thread.as_mut() {
@@ -37,11 +46,6 @@ impl<T> ThreadHandle<T> {
   }
 
   pub fn push_backlog(&mut self, line: &str) {
-    let mut backlog = self.backlog.lock().unwrap();
-    if line == "" {
-      backlog.clear()
-    } else {
-      backlog.push(line.to_owned());
-    }
+    push_backlog(&mut self.backlog, line)
   }
 }
