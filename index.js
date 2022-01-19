@@ -83,6 +83,9 @@ class JsonlDB {
     get isOpen() {
         return this.db.isOpen();
     }
+    dump(filename) {
+        return this.db.dump(filename);
+    }
     clear() {
         this.db.clear();
         throw new Error("Method not implemented.");

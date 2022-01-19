@@ -92,6 +92,10 @@ export class JsonlDB<V> implements Map<string, V> {
 		return this.db.isOpen();
 	}
 
+	public dump(filename: string): Promise<void> {
+		return this.db.dump(filename);
+	}
+
 	public clear(): void {
 		this.db.clear();
 		throw new Error("Method not implemented.");

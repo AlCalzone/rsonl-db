@@ -123,3 +123,4 @@ Cargo.lock
 
 
 test.txt
+test.*.txt

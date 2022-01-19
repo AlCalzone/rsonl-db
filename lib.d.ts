@@ -18,6 +18,7 @@ export class JsonlDB {
 	constructor(filename: string, options?: JsonlDBOptions | undefined | null);
 	open(): Promise<void>;
 	close(): Promise<void>;
+	dump(filename: string): Promise<void>;
 	isOpen(): boolean;
 	set(key: string, value: any): void;
 	setStringified(key: string, value: string): void;

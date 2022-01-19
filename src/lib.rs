@@ -21,6 +21,7 @@ static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
 mod db;
 mod db_options;
 mod jsonldb_options;
+mod bg_thread;
 
 #[macro_use]
 mod error;
@@ -91,6 +92,14 @@ impl JsonlDB {
   }
 
   #[napi]
+  pub async fn dump(&mut self, filename: String) -> Result<()> {
+    let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
+    db.dump(&filename).await?;
+
+    Ok(())
+  }
+
+  #[napi]
   pub fn is_open(&self) -> bool {
     self.r.is_opened()
   }
@@ -149,8 +158,11 @@ impl JsonlDB {
   ) -> Result<()> {
     let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
 
-    for (k, v) in db.entries() {
-      callback(v.clone().into(), k.clone()).unwrap();
+    for k in db.all_keys() {
+      let v = db.get(&k);
+      if let Some(v) = v {
+        callback(v.clone().into(), k.clone()).unwrap();
+      }
     }
     Ok(())
   }
@@ -158,7 +170,6 @@ impl JsonlDB {
   #[napi]
   pub fn get_keys(&mut self) -> Result<Vec<String>> {
     let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
-    let all_keys: Vec<_> = db.keys().cloned().collect();
-    Ok(all_keys)
+    Ok(db.all_keys())
   }
 }
