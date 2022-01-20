@@ -23,6 +23,15 @@ impl From<MapValue> for serde_json::Value {
   }
 }
 
+impl From<&MapValue> for serde_json::Value {
+  fn from(val: &MapValue) -> Self {
+    match val {
+      MapValue::Stringified(str) => serde_json::from_str(str).unwrap(),
+      MapValue::Raw(v) => v.clone(),
+    }
+  }
+}
+
 impl Into<String> for MapValue {
   fn into(self) -> String {
     match self {

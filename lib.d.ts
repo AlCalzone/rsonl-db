@@ -39,4 +39,7 @@ export class JsonlDB {
 	get size(): number;
 	forEach(callback: (value: any, key: string) => void): void;
 	getKeys(): Array<string>;
+	exportJson(filename: string, pretty: boolean): Promise<void>;
+	importJsonFile(filename: string): Promise<void>;
+	importJsonString(json: string): void;
 }

@@ -174,6 +174,26 @@ export class JsonlDB<V> implements Map<string, V> {
 	public get [Symbol.toStringTag](): string {
 		return "JsonlDB";
 	}
+
+	public async exportJson(
+		filename: string,
+		pretty: boolean = false,
+	): Promise<void> {
+		await this.db.exportJson(filename, pretty);
+	}
+
+	public importJson(filename: string): Promise<void>;
+	public importJson(json: Record<string, any>): void;
+	public importJson(
+		jsonOrFile: Record<string, any> | string,
+	): void | Promise<void> {
+		if (typeof jsonOrFile === "string") {
+			return this.db.importJsonFile(jsonOrFile);
+		} else {
+			// Yeah, this is weird but more performant for large objects
+			return this.db.importJsonString(JSON.stringify(jsonOrFile));
+		}
+	}
 }
 
 export { JsonlDBOptions, JsonlDBOptionsThrottleFS } from "./lib";

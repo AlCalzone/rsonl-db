@@ -58,23 +58,28 @@ async function main() {
 	await db.open();
 	console.timeEnd("open RS");
 
+	console.time("import RS");
+	await db.importJson({ key1: 1, key2: 2, key3: 3 });
+	console.timeEnd("import RS");
+
 	console.log(`size: `, db.size);
 
-	let start = Date.now();
-	let calls = 0;
+	// let start = Date.now();
+	// let calls = 0;
 
-	while (Date.now() - start < 3000) {
-		// for (let i = 0; i < 10; i++) {
-		const key = `benchmark.0.test${calls}`;
-		const value = makeObj(calls);
-		db.set(key, value);
-		if (Math.random() < 0.2) {
-			db.delete(key);
-		}
-		calls++;
-	}
+	// while (Date.now() - start < 3000) {
+	// 	// for (let i = 0; i < 10; i++) {
+	// 	const key = `benchmark.0.test${calls}`;
+	// 	const value = makeObj(calls);
+	// 	db.set(key, value);
+	// 	if (Math.random() < 0.2) {
+	// 		db.delete(key);
+	// 	}
+	// 	calls++;
+	// }
 
-	console.log("calls:", calls);
+	// console.log("calls:", calls);
+	// console.log(`size: `, db.size);
 
 	// console.time("dump");
 	// let compressPromise1 = db.compress().then(() => console.log("compress 1"));
@@ -93,6 +98,8 @@ async function main() {
 	// // await compressPromise1
 
 	// console.timeEnd("dump");
+
+	// await db.exportJson("test.json", false);
 
 	// db.clear();
 	console.time("close RS");

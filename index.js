@@ -45,11 +45,8 @@ class JsonlDB {
         this.db = new lib_1.JsonlDB(filename, options);
     }
     validateOptions(options /*<V>*/) {
-        // @ts-expect-error
         if (options.autoCompress) {
-            const { sizeFactor, sizeFactorMinimumSize, intervalMs, intervalMinChanges,
-            // @ts-expect-error
-             } = options.autoCompress;
+            const { sizeFactor, sizeFactorMinimumSize, intervalMs, intervalMinChanges, } = options.autoCompress;
             if (sizeFactor != undefined && sizeFactor <= 1) {
                 throw new Error("sizeFactor must be > 1");
             }
@@ -86,8 +83,13 @@ class JsonlDB {
     dump(filename) {
         return this.db.dump(filename);
     }
-    compress() {
-        return this.db.compress();
+    async compress() {
+        // We REALLY don't want to compress twice in parallel
+        if (!this._compressPromise) {
+            this._compressPromise = this.db.compress();
+        }
+        await this._compressPromise;
+        this._compressPromise = undefined;
     }
     clear() {
         this.db.clear();
@@ -149,6 +151,18 @@ class JsonlDB {
     }
     get [Symbol.toStringTag]() {
         return "JsonlDB";
+    }
+    async exportJson(filename, pretty = false) {
+        await this.db.exportJson(filename, pretty);
+    }
+    importJson(jsonOrFile) {
+        if (typeof jsonOrFile === "string") {
+            return this.db.importJsonFile(jsonOrFile);
+        }
+        else {
+            // Yeah, this is weird but more performant for large objects
+            return this.db.importJsonString(JSON.stringify(jsonOrFile));
+        }
     }
 }
 exports.JsonlDB = JsonlDB;

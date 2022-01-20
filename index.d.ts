@@ -7,6 +7,7 @@ export declare class JsonlDB<V> implements Map<string, V> {
     close(): Promise<void>;
     get isOpen(): boolean;
     dump(filename: string): Promise<void>;
+    private _compressPromise;
     compress(): Promise<void>;
     clear(): void;
     delete(key: string): boolean;
@@ -20,6 +21,9 @@ export declare class JsonlDB<V> implements Map<string, V> {
     values(): IterableIterator<V>;
     [Symbol.iterator](): IterableIterator<[string, V]>;
     get [Symbol.toStringTag](): string;
+    exportJson(filename: string, pretty?: boolean): Promise<void>;
+    importJson(filename: string): Promise<void>;
+    importJson(json: Record<string, any>): void;
 }
 export { JsonlDBOptions, JsonlDBOptionsThrottleFS } from "./lib";
 //# sourceMappingURL=index.d.ts.map

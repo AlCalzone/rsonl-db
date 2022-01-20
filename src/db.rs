@@ -2,13 +2,15 @@ use std::io::Error;
 use std::str::FromStr;
 use std::sync::Arc;
 
+use serde_json::{Map, Value};
 use tokio::fs::{File, OpenOptions};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::{mpsc, Notify};
 
 use crate::bg_thread::{Command, ThreadHandle};
 use crate::db_options::DBOptions;
-use crate::storage::{format_line, parse_entries, Entry, MapValue, SharedStorage, Storage};
 use crate::persistence::persistence_thread;
+use crate::storage::{format_line, parse_entries, Entry, MapValue, SharedStorage, Storage};
 
 pub(crate) struct RsonlDB<S: DBState> {
   pub filename: String,
@@ -217,6 +219,65 @@ impl RsonlDB<Opened> {
       notify.clone().notified().await;
 
       self.state.compress_promise = None;
+    }
+
+    Ok(())
+  }
+
+  pub async fn export_json(&mut self, filename: &str, pretty: bool) -> Result<(), Error> {
+    let entries = { self.state.storage.lock().unwrap().entries.clone() };
+
+    let mut file = OpenOptions::new()
+      .create(true)
+      .truncate(true)
+      .write(true)
+      .open(filename)
+      .await?;
+
+    let map =
+      Map::<String, Value>::from_iter(entries.iter().map(|(k, v)| (k.to_owned(), Value::from(v))));
+    let json = if pretty {
+      serde_json::to_string_pretty(&map)?
+    } else {
+      serde_json::to_string(&map)?
+    };
+
+    file.write_all(json.as_bytes()).await?;
+
+    Ok(())
+  }
+
+  pub async fn import_json_file(&mut self, filename: &str) -> Result<(), Error> {
+    let buffer = {
+      let mut buffer = Vec::new();
+      let mut file = OpenOptions::new().read(true).open(filename).await?;
+      file.read_to_end(&mut buffer).await?;
+      buffer
+    };
+
+    let json: Map<String, Value> = serde_json::from_slice(&buffer).unwrap();
+    self.import_json_map(json)?;
+    Ok(())
+  }
+
+  pub fn import_json_string(&mut self, json: &str) -> Result<(), Error> {
+    let json: Map<String, Value> = serde_json::from_str(&json).unwrap();
+    println!("map is {:?}", &json);
+    self.import_json_map(json)?;
+    Ok(())
+  }
+
+  fn import_json_map(&mut self, map: Map<String, Value>) -> Result<(), Error> {
+    let mut storage = self.state.storage.lock().unwrap();
+    for (key, value) in map.into_iter() {
+      let stringified = serde_json::to_string(&Entry::Value {
+        k: key.clone(),
+        v: value.clone(),
+      })
+      .unwrap();
+
+      storage.entries.insert(key, MapValue::Raw(value));
+      storage.backlog.push(stringified);
     }
 
     Ok(())

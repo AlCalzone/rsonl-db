@@ -16,13 +16,13 @@ extern crate derive_builder;
 #[global_allocator]
 static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
+mod bg_thread;
 mod db;
 mod db_options;
-mod storage;
 mod jsonldb_options;
-mod bg_thread;
-mod util;
 mod persistence;
+mod storage;
+mod util;
 
 #[macro_use]
 mod error;
@@ -179,5 +179,26 @@ impl JsonlDB {
   pub fn get_keys(&mut self) -> Result<Vec<String>> {
     let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
     Ok(db.all_keys())
+  }
+
+  #[napi]
+  pub async fn export_json(&mut self, filename: String, pretty: bool) -> Result<()> {
+    let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
+    db.export_json(&filename, pretty).await.unwrap();
+    Ok(())
+  }
+
+  #[napi]
+  pub async fn import_json_file(&mut self, filename: String) -> Result<()> {
+    let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
+    db.import_json_file(&filename).await.unwrap();
+    Ok(())
+  }
+
+  #[napi]
+  pub fn import_json_string(&mut self, json: String) -> Result<()> {
+    let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
+    db.import_json_string(&json).unwrap();
+    Ok(())
   }
 }
