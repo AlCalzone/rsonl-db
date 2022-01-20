@@ -43,6 +43,12 @@ async function main() {
 		// 	intervalMs: 500,
 		// 	//   maxBufferedCommands: 100000
 		// },
+		autoCompress: {
+			intervalMs: 500,
+			intervalMinChanges: 10000,
+			onOpen: true,
+			onClose: true,
+		},
 	});
 	// const jsdb = new JsonlDB_JS('test.txt', {
 	//   ignoreReadErrors: true,
@@ -62,36 +68,40 @@ async function main() {
 		const key = `benchmark.0.test${calls}`;
 		const value = makeObj(calls);
 		db.set(key, value);
-		db.delete(key);
+		if (Math.random() < 0.2) {
+			db.delete(key);
+		}
 		calls++;
 	}
 
 	console.log("calls:", calls);
 
-	console.time("dump");
-	let compressPromise1 = db.compress().then(() => console.log("compress 1"));
-	let compressPromise2 = db.compress().then(() => console.log("compress 2"));
-	let compressPromise3 = db.compress().then(() => console.log("compress 3"));
-	// let dumpPromise = db.dump("test.dump.txt");
-	//   while (Date.now() - start < 10000) {
-	for (let i = 0; i < 10000; i++) {
-		const key = `backlog${i}`;
-		const value = makeObj(i);
-		db.set(key, value);
-		// calls++
-	}
-	await Promise.all([compressPromise1, compressPromise2, compressPromise3]);
-	// await dumpPromise
-	// await compressPromise1
+	// console.time("dump");
+	// let compressPromise1 = db.compress().then(() => console.log("compress 1"));
+	// let compressPromise2 = db.compress().then(() => console.log("compress 2"));
+	// let compressPromise3 = db.compress().then(() => console.log("compress 3"));
+	// // let dumpPromise = db.dump("test.dump.txt");
+	// //   while (Date.now() - start < 10000) {
+	// for (let i = 0; i < 10000; i++) {
+	// 	const key = `backlog${i}`;
+	// 	const value = makeObj(i);
+	// 	db.set(key, value);
+	// 	// calls++
+	// }
+	// await Promise.all([compressPromise1, compressPromise2, compressPromise3]);
+	// // await dumpPromise
+	// // await compressPromise1
 
-	console.timeEnd("dump");
+	// console.timeEnd("dump");
 
 	// db.clear();
 	console.time("close RS");
 	await db.close();
 	console.timeEnd("close RS");
 
-	debugger;
+	setTimeout(() => {
+		process.exit(0);
+	}, 500);
 
 	// console.time('open JS')
 	// await jsdb.open()

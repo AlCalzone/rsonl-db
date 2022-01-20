@@ -12,8 +12,8 @@ use tokio::{
 };
 
 use crate::{
-  bg_thread::{Command},
-  db_options::DBOptions,
+  bg_thread::Command,
+  db_options::{AutoCompressOptions, DBOptions},
   storage::{format_line, SharedStorage},
   util::{file_needs_lf, fsync_dir, safe_parent},
 };
@@ -25,18 +25,27 @@ fn is_stop_cmd(cmd: Result<Option<Command>, Elapsed>) -> bool {
   }
 }
 
-// fn need_to_compress(&self) -> bool {
-//   if self.state.compress_promise.as_ref().is_some() {
-//     return false;
-//   }
-//   if self.options.auto_compress.size_factor == 0 {
-//     return false;
-//   }
+fn need_to_compress_by_size(opts: &AutoCompressOptions, size: u32, uncompressed_size: u32) -> bool {
+  if opts.size_factor == 0 {
+    return false;
+  }
 
-//   let size = { self.state.entries.lock().unwrap().len() as u32 };
-//   return self.state.uncompressed_size as u32 >= self.options.auto_compress.size_factor_min_size
-//     && self.state.uncompressed_size as u32 >= self.options.auto_compress.size_factor * size;
-// }
+  return uncompressed_size as u32 >= opts.size_factor_min_size
+    && uncompressed_size as u32 >= opts.size_factor * size;
+}
+
+fn need_to_compress_by_time(
+  opts: &AutoCompressOptions,
+  last_compress: Instant,
+  changes_since_compress: u32,
+) -> bool {
+  if opts.interval_ms == 0 {
+    return false;
+  }
+
+  return changes_since_compress >= opts.interval_min_changes
+    && Instant::now().duration_since(last_compress).as_millis() > opts.interval_ms as u128;
+}
 
 pub(crate) async fn persistence_thread(
   filename: &str,
@@ -51,6 +60,7 @@ pub(crate) async fn persistence_thread(
   let max_buffered_commands = opts.throttle_fs.max_buffered_commands;
 
   // And compression attempts
+  let mut last_compress = Instant::now();
   let mut uncompressed_size: usize = storage.len();
   let mut changes_since_compress: usize = 0;
 
@@ -64,10 +74,29 @@ pub(crate) async fn persistence_thread(
     ret
   };
 
-  let idle_duration = Duration::from_millis(250);
+  let mut just_opened: bool = true;
+
+  let idle_duration = Duration::from_millis(20);
   loop {
-    // TODO: AUto compress
-    let command = time::timeout(idle_duration, rx.recv()).await;
+    let command = if (just_opened && opts.auto_compress.on_open)
+      || need_to_compress_by_size(
+        &opts.auto_compress,
+        storage.len() as u32,
+        uncompressed_size as u32,
+      )
+      || need_to_compress_by_time(
+        &opts.auto_compress,
+        last_compress,
+        changes_since_compress as u32,
+      ) {
+      // We need to compress, do it now!
+      Ok(Some(Command::Compress { done: None }))
+    } else {
+      // If we don't have to compress, wait for a command
+      time::timeout(idle_duration, rx.recv()).await
+    };
+
+    just_opened = false;
 
     // Figure out if there is something to do
     match command {
@@ -118,7 +147,6 @@ pub(crate) async fn persistence_thread(
         let dirname = safe_parent(Path::new(&filename)).unwrap();
 
         // 1. Ensure the backup contains everything in the DB and backlog
-        println!("1: flush");
         let write_backlog = storage.drain_backlog();
         for str in write_backlog.iter() {
           if str == "" {
@@ -142,27 +170,20 @@ pub(crate) async fn persistence_thread(
         drop(writer);
 
         // 2. Create a dump, draining the backlog to avoid duplicate writes
-        println!("2: dump");
         dump(&dump_filename, &mut storage, true).await?;
 
         // 3. Ensure there are no pending rename operations or file creations
-        println!("3: fsync_dir, {}", &dirname.to_string_lossy());
         fsync_dir(&dirname).await?;
 
         // 4. Swap files around, then ensure the directory entries are written to disk
-        println!("4a: rename {} -> {}", &filename, &backup_filename);
         fs::rename(&filename, &backup_filename).await?;
-        println!("4b: rename {} -> {}", &dump_filename, &filename);
         fs::rename(&dump_filename, &filename).await?;
-        println!("4c fsync_dir, {}", &dirname.to_string_lossy());
         fsync_dir(&dirname).await?;
 
         // 5. Delete backup
-        println!("5: remove {}", &backup_filename);
         fs::remove_file(&backup_filename).await?;
 
         // 6. open the main DB file again
-        println!("6: open file");
         file = OpenOptions::new()
           .create(true)
           .read(true)
@@ -176,10 +197,12 @@ pub(crate) async fn persistence_thread(
         // Remember the new statistics
         uncompressed_size = storage.len();
         changes_since_compress = 0;
+        last_compress = Instant::now();
 
-        println!("done");
         // invoke the callback
-        done.notify_waiters();
+        if let Some(done) = done {
+          done.notify_waiters();
+        }
       }
 
       Ok(Some(Command::Dump { filename, done })) => {

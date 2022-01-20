@@ -100,6 +100,11 @@ impl RsonlDB<Closed> {
 
 impl RsonlDB<Opened> {
   pub async fn close(&mut self) -> Result<RsonlDB<Closed>, Error> {
+    // Compress if that is desired
+    if self.options.auto_compress.on_close {
+      self.compress().await?;
+    }
+
     // End the all threads and wait for them to end
     self.state.persistence_thread.stop_and_join().await?;
 
@@ -203,7 +208,7 @@ impl RsonlDB<Opened> {
         .state
         .persistence_thread
         .send_command(Command::Compress {
-          done: notify.clone(),
+          done: Some(notify.clone()),
         })
         .await
         .unwrap();

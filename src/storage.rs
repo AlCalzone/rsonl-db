@@ -1,5 +1,5 @@
-use std::sync::{Arc, Mutex};
 use std::io::Error;
+use std::sync::{Arc, Mutex};
 
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
@@ -111,7 +111,8 @@ impl SharedStorage {
   }
 
   pub fn remove(&mut self, key: String) {
-    let stringified = serde_json::to_string(&Entry::Delete { k: key.to_owned() }).unwrap();
+    let mut stringified = serde_json::to_string(&Entry::Delete { k: key.to_owned() }).unwrap();
+    stringified.push_str("\n");
 
     let mut storage = self.lock().unwrap();
     storage.entries.remove(&key);

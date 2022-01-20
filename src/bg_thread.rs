@@ -10,7 +10,7 @@ pub(crate) type Callback = Arc<Notify>;
 pub(crate) enum Command {
   Stop,
   Dump { filename: String, done: Callback },
-  Compress { done: Callback },
+  Compress { done: Option<Callback> },
 }
 
 pub(crate) struct ThreadHandle<T> {
