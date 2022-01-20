@@ -3,7 +3,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use serde_json::{Map, Value};
-use tokio::fs::{File, OpenOptions};
+use tokio::fs::{self, OpenOptions};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::{mpsc, Notify};
 
@@ -42,19 +42,6 @@ impl DBState for Opened {
   }
 }
 
-impl<S: DBState> RsonlDB<S> {
-  async fn open_file(&self) -> Result<File, Error> {
-    return Ok(
-      OpenOptions::new()
-        .create(true)
-        .read(true)
-        .write(true)
-        .open(&self.filename)
-        .await?,
-    );
-  }
-}
-
 impl RsonlDB<Closed> {
   pub fn new(filename: String, options: DBOptions) -> Self {
     RsonlDB {
@@ -64,8 +51,71 @@ impl RsonlDB<Closed> {
     }
   }
 
+  async fn try_recover_db_files(&self) -> Result<(), Error> {
+    let filename = self.filename.to_owned();
+    let dump_filename = format!("{}.dump", &filename);
+    let backup_filename = format!("{}.bak", &filename);
+
+    // During the compression, the following sequence of events happens:
+    // 1. A .jsonl.dump file gets written with a compressed copy of the data
+    // 2. Files get renamed: .jsonl -> .jsonl.bak, .jsonl.dump -> .jsonl
+    // 3. .bak file gets removed
+    // 4. Buffered data gets written to the .jsonl file
+
+    // This means if the .jsonl file is absent or truncated, we should be able to pick either the .dump or the .bak file
+    // and restore the .jsonl file from it
+    let mut db_file_ok = false;
+    if let Ok(meta) = fs::metadata(&filename).await {
+      db_file_ok = meta.is_file() && meta.len() > 0;
+    }
+
+    // Prefer the DB file if it exists, remove the others in case they exist
+    if db_file_ok {
+      fs::remove_file(&backup_filename).await.ok();
+      fs::remove_file(&dump_filename).await.ok();
+      return Ok(());
+    }
+
+    // The backup file should have complete data - the dump file could be subject to an incomplete write
+    let mut bak_file_ok = false;
+    if let Ok(meta) = fs::metadata(&backup_filename).await {
+      bak_file_ok = meta.is_file() && meta.len() > 0;
+    }
+
+    if bak_file_ok {
+      // Overwrite the broken db file with it and delete the dump file
+      fs::rename(&backup_filename, &filename).await?;
+      fs::remove_file(&dump_filename).await.ok();
+      return Ok(());
+    }
+
+    // Try the dump file as a last attempt
+    let mut dump_file_ok = false;
+    if let Ok(meta) = fs::metadata(&dump_filename).await {
+      dump_file_ok = meta.is_file() && meta.len() > 0;
+    }
+
+    if dump_file_ok {
+      // Overwrite the broken db file with it and delete the backup file
+      fs::rename(&dump_filename, &filename).await?;
+      fs::remove_file(&backup_filename).await.ok();
+      return Ok(());
+    }
+
+    Ok(())
+  }
+
   pub async fn open(&self) -> Result<RsonlDB<Opened>, Error> {
-    let mut file = self.open_file().await?;
+    // Make sure that there are no remains of a previous broken compress attempt
+    // and restore a DB backup if it exists.
+    self.try_recover_db_files().await?;
+
+    let mut file = OpenOptions::new()
+      .create(true)
+      .read(true)
+      .write(true)
+      .open(&self.filename)
+      .await?;
 
     // Read the entire file. This also puts the cursor at the end, so we can start writing
     let entries = parse_entries(&mut file, self.options.ignore_read_errors).await?;
