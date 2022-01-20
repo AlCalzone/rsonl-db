@@ -1,51 +1,32 @@
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc};
 use tokio::{
-  sync::mpsc::Sender,
+  sync::{mpsc::Sender, Notify},
   task::{JoinError, JoinHandle},
 };
 
-pub(crate) type Backlog = Arc<Mutex<Vec<String>>>;
-pub(crate) type BGThread<T> = Option<Box<JoinHandle<T>>>;
+pub(crate) type Callback = Arc<Notify>;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub(crate) enum Command {
   Stop,
+  Dump { filename: String, done: Callback },
+  Compress { done: Callback },
 }
 
 pub(crate) struct ThreadHandle<T> {
-  pub thread: BGThread<T>,
-  pub backlog: Backlog,
-  pub tx: Option<Sender<Command>>,
+  pub thread: Box<JoinHandle<T>>,
+  pub tx: Sender<Command>,
 }
 
-pub fn push_backlog(backlog: &mut Backlog, line: &str) {
-  let mut backlog = backlog.lock().unwrap();
-  if line == "" {
-    backlog.clear()
-  } else {
-    backlog.push(line.to_owned());
-  }
-}
 
 impl<T> ThreadHandle<T> {
-  pub async fn stop_and_join(&mut self) -> Result<Option<T>, JoinError> {
-    if let Some(thread) = self.thread.as_mut() {
-      if let Some(tx) = &self.tx {
-        tx.send(Command::Stop).await.unwrap();
-      }
-      return thread.await.map(|r| Some(r));
-    }
-    Ok(None)
+  pub async fn stop_and_join(&mut self) -> Result<T, JoinError> {
+    self.send_command(Command::Stop).await.unwrap();
+    self.thread.as_mut().await
   }
 
-  pub async fn join(&mut self) -> Result<Option<T>, JoinError> {
-    if let Some(thread) = self.thread.as_mut() {
-      return thread.await.map(|r| Some(r));
-    }
-    Ok(None)
-  }
-
-  pub fn push_backlog(&mut self, line: &str) {
-    push_backlog(&mut self.backlog, line)
+  pub async fn send_command(&mut self, cmd: Command) -> Result<(), JoinError> {
+    self.tx.send(cmd).await.unwrap();
+    Ok(())
   }
 }

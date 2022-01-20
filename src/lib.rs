@@ -18,10 +18,11 @@ static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 mod db;
 mod db_options;
-mod entry;
+mod storage;
 mod jsonldb_options;
 mod bg_thread;
 mod util;
+mod persistence;
 
 #[macro_use]
 mod error;

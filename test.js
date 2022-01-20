@@ -39,10 +39,10 @@ async function main() {
 	debugger;
 	const db = new JsonlDB(`${__dirname}/test.txt`, {
 		// ignoreReadErrors: true,
-		throttleFS: {
-			intervalMs: 500,
-			//   maxBufferedCommands: 100000
-		},
+		// throttleFS: {
+		// 	intervalMs: 500,
+		// 	//   maxBufferedCommands: 100000
+		// },
 	});
 	// const jsdb = new JsonlDB_JS('test.txt', {
 	//   ignoreReadErrors: true,
@@ -57,17 +57,18 @@ async function main() {
 	let start = Date.now();
 	let calls = 0;
 
-	while (Date.now() - start < 10000) {
+	while (Date.now() - start < 3000) {
 		// for (let i = 0; i < 10; i++) {
 		const key = `benchmark.0.test${calls}`;
 		const value = makeObj(calls);
 		db.set(key, value);
+		db.delete(key);
 		calls++;
 	}
 
 	console.log("calls:", calls);
 
-	// console.time("dump");
+	console.time("dump");
 	let compressPromise1 = db.compress().then(() => console.log("compress 1"));
 	let compressPromise2 = db.compress().then(() => console.log("compress 2"));
 	let compressPromise3 = db.compress().then(() => console.log("compress 3"));
@@ -80,8 +81,10 @@ async function main() {
 		// calls++
 	}
 	await Promise.all([compressPromise1, compressPromise2, compressPromise3]);
+	// await dumpPromise
+	// await compressPromise1
 
-	// console.timeEnd("dump");
+	console.timeEnd("dump");
 
 	// db.clear();
 	console.time("close RS");

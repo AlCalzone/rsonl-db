@@ -9,10 +9,19 @@ export class ExternalObject<T> {
 export interface JsonlDBOptions {
 	ignoreReadErrors?: boolean | undefined | null;
 	throttleFS?: JsonlDBOptionsThrottleFS | undefined | null;
+	autoCompress?: JsonlDBOptionsAutoCompress | undefined | null;
 }
 export interface JsonlDBOptionsThrottleFS {
 	intervalMs: number;
 	maxBufferedCommands?: number | undefined | null;
+}
+export interface JsonlDBOptionsAutoCompress {
+	sizeFactor?: number | undefined | null;
+	sizeFactorMinimumSize?: number | undefined | null;
+	intervalMs?: number | undefined | null;
+	intervalMinChanges?: number | undefined | null;
+	onClose?: boolean | undefined | null;
+	onOpen?: boolean | undefined | null;
 }
 export class JsonlDB {
 	constructor(filename: string, options?: JsonlDBOptions | undefined | null);

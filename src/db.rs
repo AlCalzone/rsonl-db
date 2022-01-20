@@ -1,20 +1,14 @@
-use std::io::{Error, SeekFrom};
-use std::path::Path;
+use std::io::Error;
 use std::str::FromStr;
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::sync::Arc;
 
-use indexmap::IndexMap;
-use tokio::fs::{self, File, OpenOptions};
-use tokio::io::{AsyncSeekExt, AsyncWriteExt, BufWriter};
+use tokio::fs::{File, OpenOptions};
 use tokio::sync::{mpsc, Notify};
 
-use tokio::time::{self, Instant};
-
-use crate::bg_thread::{push_backlog, Backlog, Command, ThreadHandle};
+use crate::bg_thread::{Command, ThreadHandle};
 use crate::db_options::DBOptions;
-use crate::entry::{format_line, parse_entries, Entry, MapValue};
-use crate::util::{file_needs_lf, fsync_dir, safe_parent};
+use crate::storage::{format_line, parse_entries, Entry, MapValue, SharedStorage, Storage};
+use crate::persistence::persistence_thread;
 
 pub(crate) struct RsonlDB<S: DBState> {
   pub filename: String,
@@ -26,15 +20,9 @@ pub(crate) struct RsonlDB<S: DBState> {
 pub(crate) struct Closed;
 
 pub(crate) struct Opened {
-  entries: Mutex<IndexMap<String, MapValue>>,
-  // BG thread handles
-  write_thread: Option<ThreadHandle<()>>,
-  backup_thread: Option<ThreadHandle<Result<(), Error>>>,
-  compress_backlog: Option<Backlog>,
+  storage: SharedStorage,
+  persistence_thread: ThreadHandle<()>,
   compress_promise: Option<Arc<Notify>>,
-  // statistics
-  uncompressed_size: usize,
-  changes_since_compress: usize,
 }
 
 // Turn Opened/Closed into DB states
@@ -49,45 +37,6 @@ impl DBState for Closed {
 impl DBState for Opened {
   fn is_open(&self) -> bool {
     true
-  }
-}
-
-impl Opened {
-  fn write_line(&mut self, line: &str) -> Result<(), Error> {
-    // If we're currently compressing the DB, only write into the compress backlog
-    if let Some(compress_backlog) = self.compress_backlog.as_mut() {
-      push_backlog(compress_backlog, line)
-    } else {
-      // Otherwise write into the backlog of whichever thread is currently running
-      if let Some(thread) = self.write_thread.as_mut() {
-        thread.push_backlog(line);
-      }
-      if let Some(thread) = self.backup_thread.as_mut() {
-        thread.push_backlog(line);
-      }
-      // And update statistics
-      if line == "" {
-        self.uncompressed_size = 0;
-      } else {
-        self.uncompressed_size += 1;
-      }
-      self.changes_since_compress += 1;
-    }
-
-    Ok(())
-  }
-
-  async fn stop_threads(&mut self) -> Result<(), Error> {
-    // End the all threads and wait for them to end
-    if let Some(thread) = self.write_thread.as_mut() {
-      thread.stop_and_join().await?;
-      self.write_thread = None;
-    }
-    if let Some(thread) = self.backup_thread.as_mut() {
-      thread.stop_and_join().await?;
-      self.backup_thread = None;
-    }
-    Ok(())
   }
 }
 
@@ -118,132 +67,41 @@ impl RsonlDB<Closed> {
 
     // Read the entire file. This also puts the cursor at the end, so we can start writing
     let entries = parse_entries(&mut file, self.options.ignore_read_errors).await?;
+    let backlog = Vec::<String>::new();
+    let storage = SharedStorage::new(Storage { entries, backlog });
+
+    let filename = self.filename.clone();
+    let opts = self.options.clone();
+    let shared_storage = storage.clone();
+
+    // Start the write thread
+    let (tx, rx) = mpsc::channel(32);
+    let thread = tokio::spawn(async move {
+      persistence_thread(&filename, file, shared_storage, rx, &opts)
+        .await
+        .unwrap();
+    });
 
     // Now change the state to Opened
-    let mut ret = RsonlDB {
+    Ok(RsonlDB {
       filename: self.filename.to_owned(),
       options: self.options.clone(),
       state: Opened {
-        uncompressed_size: entries.len(),
-        changes_since_compress: 0,
-        compress_backlog: None,
+        storage,
+        persistence_thread: ThreadHandle {
+          thread: Box::new(thread),
+          tx,
+        },
         compress_promise: None,
-        entries: Mutex::new(entries),
-        write_thread: None,
-        backup_thread: None,
       },
-    };
-
-    // And start the write thread
-    ret.start_write_thread(file);
-
-    Ok(ret)
+    })
   }
-}
-
-async fn write_thread(
-  mut file: File,
-  write_backlog: Arc<Mutex<Vec<String>>>,
-  mut write_rx: mpsc::Receiver<Command>,
-  throttle_interval: u128,
-  max_buffered_commands: usize,
-) {
-  // Check if the file ends with \n
-  let mut needs_lf = file_needs_lf(&mut file).await.unwrap();
-
-  let idle_duration = Duration::from_millis(20);
-  let mut last_write = Instant::now();
-
-  let mut writer = BufWriter::new(file);
-
-  loop {
-    let command = time::timeout(idle_duration, write_rx.recv()).await;
-    let got_stop_command = command == Ok(Some(Command::Stop));
-
-    let mut must_write = got_stop_command
-      || Instant::now().duration_since(last_write).as_millis() >= throttle_interval;
-
-    // Grab all entries from the backlog
-    let backlog: Vec<String> = {
-      let mut write_backlog = write_backlog.lock().unwrap();
-
-      if !must_write && write_backlog.len() > 0 && write_backlog.len() > max_buffered_commands {
-        must_write = true;
-      }
-
-      // If nothing needs to be written, wait for the next iteration
-      if !must_write {
-        continue;
-      }
-
-      write_backlog.splice(.., []).collect()
-    };
-
-    // And print them
-    for str in backlog.iter() {
-      if str == "" {
-        // Truncate the file
-        writer.seek(SeekFrom::Start(0)).await.unwrap();
-        writer.get_ref().set_len(0).await.unwrap();
-        needs_lf = false;
-      } else {
-        if needs_lf {
-          writer.write(b"\n").await.unwrap();
-        }
-        writer.write(str.as_bytes()).await.unwrap();
-        needs_lf = false;
-      }
-    }
-
-    // Remember if we wrote something
-    if backlog.len() > 0 {
-      last_write = Instant::now();
-    }
-
-    if got_stop_command {
-      break;
-    }
-  }
-
-  // And make sure everything is on disk
-  writer.flush().await.unwrap();
-  writer.get_ref().sync_all().await.unwrap();
 }
 
 impl RsonlDB<Opened> {
-  pub fn start_write_thread(&mut self, file: File) {
-    // We keep two references to the write backlog, one for putting entries in, one for reading it in the BG thread
-    let write_backlog_in = Arc::new(Mutex::new(Vec::<String>::new()));
-    let write_backlog_out = write_backlog_in.clone();
-
-    // Pass some options to the write thread
-    let throttle_interval: u128 = self.options.throttle_fs.interval_ms.into();
-    let max_buffered_commands: usize = self.options.throttle_fs.max_buffered_commands.into();
-
-    // Start the write thread
-    let (write_tx, write_rx) = mpsc::channel(32);
-    let write_thread = tokio::spawn(async move {
-      write_thread(
-        file,
-        write_backlog_out,
-        write_rx,
-        throttle_interval,
-        max_buffered_commands,
-      )
-      .await;
-    });
-
-    // And store the reference to it
-    self.state.write_thread = Some(ThreadHandle {
-      backlog: write_backlog_in,
-      thread: Some(Box::new(write_thread)),
-      tx: Some(write_tx),
-    });
-  }
-
   pub async fn close(&mut self) -> Result<RsonlDB<Closed>, Error> {
     // End the all threads and wait for them to end
-    self.state.stop_threads().await?;
+    self.state.persistence_thread.stop_and_join().await?;
 
     // Free memory
     drop(&self.state);
@@ -257,26 +115,24 @@ impl RsonlDB<Opened> {
   }
 
   pub fn set(&mut self, key: String, value: serde_json::Value) {
-    let str = serde_json::to_string(&Entry::Value {
+    let stringified = serde_json::to_string(&Entry::Value {
       k: key.to_owned(),
       v: value.clone(),
     })
     .unwrap();
 
-    {
-      let mut entries = self.state.entries.lock().unwrap();
-      entries.insert(key, MapValue::Raw(value));
-    }
-    self.state.write_line(&str).unwrap();
+    self
+      .state
+      .storage
+      .insert(key, MapValue::Raw(value), stringified);
   }
 
   pub fn set_stringified(&mut self, key: String, value: String) {
-    let str = format_line(&key, &value);
-    {
-      let mut entries = self.state.entries.lock().unwrap();
-      entries.insert(key, MapValue::Stringified(value.clone()));
-    }
-    self.state.write_line(&str).unwrap();
+    let stringified = format_line(&key, &value);
+    self
+      .state
+      .storage
+      .insert(key, MapValue::Stringified(value), stringified);
   }
 
   pub fn delete(&mut self, key: String) -> bool {
@@ -284,32 +140,20 @@ impl RsonlDB<Opened> {
       return false;
     };
 
-    let str = serde_json::to_string(&Entry::Delete { k: key.to_owned() }).unwrap();
-
-    {
-      let mut entries = self.state.entries.lock().unwrap();
-      entries.remove(&key);
-    }
-    self.state.write_line(&str).unwrap();
-
+    self.state.storage.remove(key);
     true
   }
 
   pub fn clear(&mut self) {
-    {
-      let mut entries = self.state.entries.lock().unwrap();
-      entries.clear();
-    }
-    self.state.write_line("").unwrap();
+    self.state.storage.clear();
   }
 
-  pub fn has(&self, key: &String) -> bool {
-    let entries = self.state.entries.lock().unwrap();
-    entries.contains_key(key)
+  pub fn has(&mut self, key: &String) -> bool {
+    self.state.storage.lock().unwrap().entries.contains_key(key)
   }
 
-  pub fn get(&self, key: &String) -> Option<serde_json::Value> {
-    let entries = self.state.entries.lock().unwrap();
+  pub fn get(&mut self, key: &String) -> Option<serde_json::Value> {
+    let entries = &self.state.storage.lock().unwrap().entries;
     match entries.get(key) {
       Some(MapValue::Raw(val)) => Some(val.clone()),
       Some(MapValue::Stringified(str)) => Some(serde_json::Value::from_str(&str.clone()).unwrap()),
@@ -317,83 +161,30 @@ impl RsonlDB<Opened> {
     }
   }
 
-  pub fn size(&self) -> usize {
-    let entries = self.state.entries.lock().unwrap();
-    entries.len()
+  pub fn size(&mut self) -> usize {
+    self.state.storage.lock().unwrap().entries.len()
   }
 
-  pub fn all_keys(&self) -> Vec<String> {
-    let entries = self.state.entries.lock().unwrap();
+  pub fn all_keys(&mut self) -> Vec<String> {
+    let entries = &self.state.storage.lock().unwrap().entries;
     entries.keys().cloned().collect()
   }
 
-  // pub fn entries(&self) -> std::collections::btree_map::Iter<String, MapValue> {
-  //   let entries = self.state.entries.lock().unwrap();
-  //   entries.iter().clone()
-  // }
-
   pub async fn dump(&mut self, filename: &str) -> Result<(), Error> {
-    // Create the backlog first thing so we don't miss any writes while copying
-    // We keep two references to the write backlog, one for putting entries in, one for reading it in the BG thread
-    let backlog_in = Arc::new(Mutex::new(Vec::<String>::new()));
-    let backlog_out = backlog_in.clone();
+    // Send command to the persistence thread
+    let notify = Arc::new(Notify::new());
+    self
+      .state
+      .persistence_thread
+      .send_command(Command::Dump {
+        filename: filename.to_owned(),
+        done: notify.clone(),
+      })
+      .await
+      .unwrap();
 
-    self.state.backup_thread = Some(ThreadHandle {
-      backlog: backlog_in,
-      thread: None,
-      tx: None,
-    });
-    let backup_thread_handle = self.state.backup_thread.as_mut().unwrap();
-
-    // Create a copy of the internal map so we can move it to the bg thread
-    let data = {
-      let entries = self.state.entries.lock().unwrap();
-      entries.clone()
-    };
-
-    let file = OpenOptions::new()
-      .create(true)
-      .write(true)
-      .truncate(true)
-      .open(filename)
-      .await?;
-
-    let write_thread = tokio::spawn(async move {
-      let mut writer = BufWriter::new(file);
-
-      // Print all items
-      for (key, val) in data {
-        writer.write(format_line(&key, val).as_bytes()).await?;
-      }
-
-      // Then print whatever is left in the backlog
-      // Grab all entries from the backlog
-      let backlog: Vec<String> = {
-        let mut backlog_out = backlog_out.lock().unwrap();
-        backlog_out.splice(.., []).collect()
-      };
-
-      for str in backlog.iter() {
-        if str == "" {
-          // Truncate the file
-          writer.seek(SeekFrom::Start(0)).await?;
-          writer.get_ref().set_len(0).await?;
-        } else {
-          writer.write(str.as_bytes()).await?;
-        }
-      }
-
-      // And make sure everything is on disk
-      writer.flush().await?;
-      writer.get_ref().sync_all().await?;
-
-      Ok(())
-    });
-
-    backup_thread_handle.thread = Some(Box::new(write_thread));
-    backup_thread_handle.join().await?;
-
-    self.state.backup_thread = None;
+    // and wait until it is done
+    notify.notified().await;
 
     Ok(())
   }
@@ -404,79 +195,25 @@ impl RsonlDB<Opened> {
       notify.clone().notified().await;
       return Ok(());
     } else {
-      self.state.compress_promise = Some(Arc::new(Notify::new()));
-    }
+      let notify = Arc::new(Notify::new());
+      self.state.compress_promise = Some(notify.clone());
 
-    // Immediately remember the database size or writes while compressing will be incorrectly reflected
-    self.state.uncompressed_size = {
-      let entries = self.state.entries.lock().unwrap();
-      entries.len()
-    };
-    self.state.changes_since_compress = 0;
-
-    let filename = &self.filename.to_owned();
-    let dump_filename = format!("{}.dump", &filename);
-    let backup_filename = format!("{}.bak", &filename);
-    let dirname = safe_parent(Path::new(filename)).unwrap();
-
-    // 1. Create a dump
-    println!("1: dump");
-    self.dump(&dump_filename).await?;
-    // While moving files around, capture writes in a separate backlog
-    self.state.compress_backlog = Some(Arc::new(Mutex::new(Vec::<String>::new())));
-
-    // 2. Ensure there are no pending rename operations or file creations
-    println!("2: fsync_dir, {}", &dirname.to_string_lossy());
-    fsync_dir(&dirname).await?;
-
-    // 3. Wait until the original DB file is fully written
-    println!("3: stop threads");
-    self.state.stop_threads().await?;
-
-    // 4. Create backup, rename the dump file, then ensure the directory entries are written to disk
-    println!("4a: rename {} -> {}", &filename, &backup_filename);
-    fs::rename(&filename, &backup_filename).await?;
-    println!("4a: rename {} -> {}", &dump_filename, &filename);
-    fs::rename(&dump_filename, &filename).await?;
-    println!("4c fsync_dir, {}", &dirname.to_string_lossy());
-    fsync_dir(&dirname).await?;
-
-    // 5. Delete backup
-    println!("5: remove {}", &backup_filename);
-    fs::remove_file(&backup_filename).await?;
-
-    // 6. Start the write thread again
-    println!("6: start thread");
-    let file = self.open_file().await?;
-    self.start_write_thread(file);
-
-    // 7. In case there is any data in the backlog stream, persist that too
-    let backlog: Vec<String> = {
-      let mut backlog_out = self
+      // Send command to the persistence thread
+      self
         .state
-        .compress_backlog
-        .as_mut()
-        .unwrap()
-        .lock()
+        .persistence_thread
+        .send_command(Command::Compress {
+          done: notify.clone(),
+        })
+        .await
         .unwrap();
-      backlog_out.splice(.., []).collect()
-    };
-    println!("7: persist backlog, len = {}", backlog.len());
-    self.state.compress_backlog = None;
-    for str in backlog.iter() {
-      self.state.write_line(&str).unwrap();
+
+      // and wait until it is done
+      notify.clone().notified().await;
+
+      self.state.compress_promise = None;
     }
 
-    // "Resolve" the compress promise
-    self
-      .state
-      .compress_promise
-      .as_ref()
-      .unwrap()
-      .notify_waiters();
-    self.state.compress_promise = None;
-
-    // First create the compress backlog so everything that gets written while compressing gets buffered
     Ok(())
   }
 }

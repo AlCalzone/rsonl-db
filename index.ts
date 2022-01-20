@@ -45,14 +45,12 @@ export class JsonlDB<V> implements Map<string, V> {
 	}
 
 	private validateOptions(options: JsonlDBOptions /*<V>*/): void {
-		// @ts-expect-error
 		if (options.autoCompress) {
 			const {
 				sizeFactor,
 				sizeFactorMinimumSize,
 				intervalMs,
 				intervalMinChanges,
-				// @ts-expect-error
 			} = options.autoCompress;
 			if (sizeFactor != undefined && sizeFactor <= 1) {
 				throw new Error("sizeFactor must be > 1");
