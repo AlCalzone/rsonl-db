@@ -343,7 +343,7 @@ impl RsonlDB<Opened> {
       .unwrap();
 
       storage.entries.insert(key, MapValue::Raw(value));
-      storage.journal.push(format!("{}\n", stringified));
+      storage.journal.push(stringified);
     }
 
     Ok(())

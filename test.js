@@ -24,18 +24,15 @@ function makeObj(i) {
 async function main() {
 	debugger;
 	const db = new JsonlDB(`test.txt`, {
-		// ignoreReadErrors: true,
-		// throttleFS: {
-		// 	intervalMs: 500,
-		// 	//   maxBufferedCommands: 100000
-		// },
-		// autoCompress: {
-		// 	intervalMs: 500,
-		// 	intervalMinChanges: 10000,
-		// 	onOpen: true,
-		// 	onClose: true,
-		// },
-		// lockfileDirectory: "test/locks",
+		autoCompress: {
+			sizeFactor: 2,
+			sizeFactorMinimumSize: 25000,
+		},
+		ignoreReadErrors: true,
+		throttleFS: {
+			intervalMs: 60000,
+			maxBufferedCommands: 1000,
+		},
 	});
 	// const jsdb = new JsonlDB_JS('test.txt', {
 	//   ignoreReadErrors: true,
@@ -47,6 +44,9 @@ async function main() {
 
 	console.log(`size: `, db.size);
 
+	db.set("foo", "bar");
+	db.clear();
+	db.set("foo", "baz");
 
 	// let start = Date.now();
 	// let calls = 0;
@@ -90,9 +90,7 @@ async function main() {
 	await db.close();
 	console.timeEnd("close RS");
 
-	setTimeout(() => {
-		process.exit(0);
-	}, 500);
+	process.exit(0);
 
 	// console.time('open JS')
 	// await jsdb.open()

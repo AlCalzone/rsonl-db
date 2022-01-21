@@ -49,7 +49,6 @@ class JsonlDB {
         if (path_1.default.isAbsolute(filename)) {
             filename = path_1.default.resolve(filename);
         }
-        console.log(filename);
         this.db = new lib_1.JsonlDB(filename, options);
     }
     validateOptions(options /*<V>*/) {
@@ -101,7 +100,6 @@ class JsonlDB {
     }
     clear() {
         this.db.clear();
-        throw new Error("Method not implemented.");
     }
     delete(key) {
         return this.db.delete(key);

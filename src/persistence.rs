@@ -81,9 +81,12 @@ pub(crate) async fn persistence_thread(
 
   let idle_duration = Duration::from_millis(20);
   loop {
-
     // Refresh lockfile if necessary
-    if Instant::now().duration_since(last_lockfile_refresh).as_millis() >= lock.get_stale_interval_ms() {
+    if Instant::now()
+      .duration_since(last_lockfile_refresh)
+      .as_millis()
+      >= lock.get_stale_interval_ms()
+    {
       lock.update()?;
       last_lockfile_refresh = Instant::now();
     }
@@ -118,7 +121,7 @@ pub(crate) async fn persistence_thread(
         // Write to disk if necessary
         if stop || Instant::now().duration_since(last_write).as_millis() >= throttle_interval {
           let journal = storage.drain_journal_if(|j| {
-            j.len() > 0 && (throttle_interval == 0 || j.len() > max_buffered_commands)
+            stop || (j.len() > 0 && (throttle_interval == 0 || j.len() > max_buffered_commands))
           });
 
           if stop || journal.len() > 0 {
@@ -132,6 +135,7 @@ pub(crate) async fn persistence_thread(
                 changes_since_compress = 0;
               } else {
                 writer.write(str.as_bytes()).await?;
+                writer.write(b"\n").await?;
                 uncompressed_size += 1;
                 changes_since_compress += 1;
               }
@@ -169,6 +173,7 @@ pub(crate) async fn persistence_thread(
             changes_since_compress = 0;
           } else {
             writer.write(str.as_bytes()).await?;
+            writer.write(b"\n").await?;
             uncompressed_size += 1;
             changes_since_compress += 1;
           }
@@ -257,6 +262,7 @@ async fn dump(
   // Print all items
   for (key, val) in data {
     writer.write(format_line(&key, val).as_bytes()).await?;
+    writer.write(b"\n").await?;
   }
 
   // And append any new entries in the journal
@@ -272,6 +278,7 @@ async fn dump(
       writer.get_ref().set_len(0).await?;
     } else {
       writer.write(str.as_bytes()).await?;
+      writer.write(b"\n").await?;
     }
   }
 

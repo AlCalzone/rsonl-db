@@ -110,7 +110,6 @@ export class JsonlDB<V> implements Map<string, V> {
 
 	public clear(): void {
 		this.db.clear();
-		throw new Error("Method not implemented.");
 	}
 
 	public delete(key: string): boolean {

@@ -43,7 +43,7 @@ impl Into<String> for MapValue {
 
 pub(crate) fn format_line(key: &str, val: impl Into<String>) -> String {
   format!(
-    "{{\"k\":{},\"v\":{}}}\n",
+    "{{\"k\":{},\"v\":{}}}",
     serde_json::to_string(key).unwrap(),
     val.into()
   )
@@ -120,8 +120,7 @@ impl SharedStorage {
   }
 
   pub fn remove(&mut self, key: String) {
-    let mut stringified = serde_json::to_string(&Entry::Delete { k: key.to_owned() }).unwrap();
-    stringified.push_str("\n");
+    let stringified = serde_json::to_string(&Entry::Delete { k: key.to_owned() }).unwrap();
 
     let mut storage = self.lock().unwrap();
     storage.entries.remove(&key);
