@@ -117,12 +117,12 @@ pub(crate) async fn persistence_thread(
 
         // Write to disk if necessary
         if stop || Instant::now().duration_since(last_write).as_millis() >= throttle_interval {
-          let backlog = storage.drain_backlog_if(|b| {
-            b.len() > 0 && (throttle_interval == 0 || b.len() > max_buffered_commands)
+          let journal = storage.drain_journal_if(|j| {
+            j.len() > 0 && (throttle_interval == 0 || j.len() > max_buffered_commands)
           });
 
-          if stop || backlog.len() > 0 {
-            for str in backlog.iter() {
+          if stop || journal.len() > 0 {
+            for str in journal.iter() {
               if str == "" {
                 // Truncate the file
                 writer.seek(SeekFrom::Start(0)).await?;
@@ -157,9 +157,9 @@ pub(crate) async fn persistence_thread(
         let backup_filename = format!("{}.bak", &filename);
         let dirname = safe_parent(Path::new(&filename)).unwrap();
 
-        // 1. Ensure the backup contains everything in the DB and backlog
-        let write_backlog = storage.drain_backlog();
-        for str in write_backlog.iter() {
+        // 1. Ensure the backup contains everything in the DB and journal
+        let write_journal = storage.drain_journal();
+        for str in write_journal.iter() {
           if str == "" {
             // Truncate the file
             writer.seek(SeekFrom::Start(0)).await?;
@@ -180,7 +180,7 @@ pub(crate) async fn persistence_thread(
         // Close the file
         drop(writer);
 
-        // 2. Create a dump, draining the backlog to avoid duplicate writes
+        // 2. Create a dump, draining the journal to avoid duplicate writes
         dump(&dump_filename, &mut storage, true).await?;
 
         // 3. Ensure there are no pending rename operations or file creations
@@ -203,7 +203,7 @@ pub(crate) async fn persistence_thread(
           .await?;
         writer = BufWriter::new(file);
         writer.seek(SeekFrom::End(0)).await?;
-        // Any "new" data in the backlog will be written in the next iteration
+        // Any "new" data in the journal will be written in the next iteration
 
         // Remember the new statistics
         uncompressed_size = storage.len();
@@ -232,7 +232,7 @@ pub(crate) async fn persistence_thread(
 async fn dump(
   filename: &str,
   storage: &mut SharedStorage,
-  drain_backlog: bool,
+  drain_journal: bool,
 ) -> Result<(), Error> {
   let dump_file = OpenOptions::new()
     .create(true)
@@ -244,14 +244,14 @@ async fn dump(
   let mut writer = BufWriter::new(dump_file);
 
   // Create a copy of the internal map so we only need to hold on to it very shortly
-  // Also, remember how many entries were in the backlog. These are already part of
+  // Also, remember how many entries were in the journal. These are already part of
   // the map, so we don't need to append them later
   // and keep a consistent state
-  let (data, backlog_len) = {
+  let (data, journal_len) = {
     let storage = storage.lock().unwrap();
     let entries = &storage.entries;
-    let backlog = &storage.backlog;
-    (entries.clone(), backlog.len())
+    let journal = &storage.journal;
+    (entries.clone(), journal.len())
   };
 
   // Print all items
@@ -259,13 +259,13 @@ async fn dump(
     writer.write(format_line(&key, val).as_bytes()).await?;
   }
 
-  // And append any new entries in the backlog
-  let backlog = if drain_backlog {
-    storage.drain_backlog()
+  // And append any new entries in the journal
+  let journal = if drain_journal {
+    storage.drain_journal()
   } else {
-    storage.lock().unwrap().backlog.clone()
+    storage.lock().unwrap().journal.clone()
   };
-  for str in backlog.iter().skip(backlog_len) {
+  for str in journal.iter().skip(journal_len) {
     if str == "" {
       // Truncate the file
       writer.seek(SeekFrom::Start(0)).await?;

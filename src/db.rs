@@ -136,8 +136,8 @@ impl RsonlDB<Closed> {
 
     // Read the entire file. This also puts the cursor at the end, so we can start writing
     let entries = parse_entries(&mut file, self.options.ignore_read_errors).await?;
-    let backlog = Vec::<String>::new();
-    let storage = SharedStorage::new(Storage { entries, backlog });
+    let journal = Vec::<String>::new();
+    let storage = SharedStorage::new(Storage { entries, journal });
 
     let filename = self.filename.clone();
     let opts = self.options.clone();
@@ -343,7 +343,7 @@ impl RsonlDB<Opened> {
       .unwrap();
 
       storage.entries.insert(key, MapValue::Raw(value));
-      storage.backlog.push(format!("{}\n", stringified));
+      storage.journal.push(format!("{}\n", stringified));
     }
 
     Ok(())

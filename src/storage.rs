@@ -85,11 +85,11 @@ pub(crate) async fn parse_entries(
   Ok(entries)
 }
 
-pub(crate) type Backlog = Vec<String>;
+pub(crate) type Journal = Vec<String>;
 
 pub(crate) struct Storage {
   pub entries: IndexMap<String, MapValue>,
-  pub backlog: Backlog,
+  pub journal: Journal,
 }
 
 #[derive(Clone)]
@@ -116,7 +116,7 @@ impl SharedStorage {
   pub fn insert(&mut self, key: String, value: MapValue, stringified: String) {
     let mut storage = self.lock().unwrap();
     storage.entries.insert(key, value);
-    storage.backlog.push(stringified);
+    storage.journal.push(stringified);
   }
 
   pub fn remove(&mut self, key: String) {
@@ -125,30 +125,30 @@ impl SharedStorage {
 
     let mut storage = self.lock().unwrap();
     storage.entries.remove(&key);
-    storage.backlog.push(stringified);
+    storage.journal.push(stringified);
   }
 
   pub fn clear(&mut self) {
     let mut storage = self.lock().unwrap();
     storage.entries.clear();
-    storage.backlog.push("".to_owned());
+    storage.journal.push("".to_owned());
   }
 
-  pub fn drain_backlog(&mut self) -> Vec<String> {
+  pub fn drain_journal(&mut self) -> Vec<String> {
     let mut storage = self.lock().unwrap();
-    let backlog = &mut storage.backlog;
-    backlog.splice(.., []).collect()
+    let journal = &mut storage.journal;
+    journal.splice(.., []).collect()
   }
 
-  pub fn drain_backlog_if<F>(&mut self, predicate: F) -> Vec<String>
+  pub fn drain_journal_if<F>(&mut self, predicate: F) -> Vec<String>
   where
     F: Fn(&Vec<String>) -> bool,
   {
     let mut storage = self.lock().unwrap();
-    let backlog = &mut storage.backlog;
-    if !predicate(&backlog) {
+    let journal = &mut storage.journal;
+    if !predicate(&journal) {
       return vec![];
     }
-    backlog.splice(.., []).collect()
+    journal.splice(.., []).collect()
   }
 }
