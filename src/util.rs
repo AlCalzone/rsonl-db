@@ -1,5 +1,5 @@
 use std::io::{Error, SeekFrom};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
@@ -24,10 +24,25 @@ pub(crate) async fn fsync_dir(
   Ok(())
 }
 
-pub(crate) fn safe_parent(p: &Path) -> Option<&Path> {
-  match p.parent() {
+pub(crate) fn safe_parent(p: impl AsRef<Path>) -> Option<PathBuf> {
+  match p.as_ref().parent() {
     None => None,
-    Some(x) if x.as_os_str().is_empty() => Some(Path::new(".")),
-    x => x,
+    Some(x) => {
+      if x.as_os_str().is_empty() {
+        Some(Path::new(".").to_owned())
+      } else {
+        Some(x.to_owned())
+      }
+    }
   }
+}
+
+pub(crate) fn replace_dirname(
+  path: impl AsRef<Path>,
+  dirname: impl AsRef<Path>,
+) -> Result<PathBuf, Error> {
+  let filename = Path::new(path.as_ref().file_name().unwrap());
+  let basename = path.as_ref().parent().unwrap();
+  let ret: PathBuf = [basename, dirname.as_ref(), filename].iter().collect();
+  Ok(ret)
 }

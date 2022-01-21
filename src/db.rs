@@ -10,9 +10,10 @@ use tokio::sync::{mpsc, Notify};
 
 use crate::bg_thread::{Command, ThreadHandle};
 use crate::db_options::DBOptions;
+use crate::lockfile::Lockfile;
 use crate::persistence::persistence_thread;
 use crate::storage::{format_line, parse_entries, Entry, MapValue, SharedStorage, Storage};
-use crate::util::safe_parent;
+use crate::util::{replace_dirname, safe_parent};
 
 pub(crate) struct RsonlDB<S: DBState> {
   pub filename: String,
@@ -109,7 +110,18 @@ impl RsonlDB<Closed> {
 
   pub async fn open(&self) -> Result<RsonlDB<Opened>, Error> {
     // Make sure the DB dir exists
-    fs::create_dir_all(safe_parent(Path::new(&self.filename)).unwrap()).await?;
+    let db_dir = safe_parent(&self.filename).unwrap();
+    fs::create_dir_all(&db_dir).await?;
+
+    // Try to acquire a lock on the DB
+    let lockfile_directory = match self.options.lockfile_directory.as_str() {
+      "." => &db_dir,
+      dir => Path::new(dir),
+    };
+    fs::create_dir_all(&lockfile_directory).await?;
+    let lockfile_name = replace_dirname(format!("{}.lock", &self.filename), lockfile_directory)?;
+    let mut lock = Lockfile::new(lockfile_name, 10000);
+    lock.lock()?;
 
     // Make sure that there are no remains of a previous broken compress attempt
     // and restore a DB backup if it exists.
@@ -134,7 +146,7 @@ impl RsonlDB<Closed> {
     // Start the write thread
     let (tx, rx) = mpsc::channel(32);
     let thread = tokio::spawn(async move {
-      persistence_thread(&filename, file, shared_storage, rx, &opts)
+      persistence_thread(&filename, file, shared_storage, lock, rx, &opts)
         .await
         .unwrap();
     });
@@ -317,7 +329,6 @@ impl RsonlDB<Opened> {
 
   pub fn import_json_string(&mut self, json: &str) -> Result<(), Error> {
     let json: Map<String, Value> = serde_json::from_str(&json).unwrap();
-    println!("map is {:?}", &json);
     self.import_json_map(json)?;
     Ok(())
   }
@@ -332,7 +343,7 @@ impl RsonlDB<Opened> {
       .unwrap();
 
       storage.entries.insert(key, MapValue::Raw(value));
-      storage.backlog.push(stringified);
+      storage.backlog.push(format!("{}\n", stringified));
     }
 
     Ok(())

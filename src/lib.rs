@@ -22,6 +22,7 @@ mod db_options;
 mod jsonldb_options;
 mod persistence;
 mod storage;
+mod lockfile;
 mod util;
 
 #[macro_use]

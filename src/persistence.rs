@@ -14,6 +14,7 @@ use tokio::{
 use crate::{
   bg_thread::Command,
   db_options::{AutoCompressOptions, DBOptions},
+  lockfile::Lockfile,
   storage::{format_line, SharedStorage},
   util::{file_needs_lf, fsync_dir, safe_parent},
 };
@@ -51,6 +52,7 @@ pub(crate) async fn persistence_thread(
   filename: &str,
   mut file: File,
   mut storage: SharedStorage,
+  mut lock: Lockfile,
   mut rx: Receiver<Command>,
   opts: &DBOptions,
 ) -> Result<(), Error> {
@@ -58,6 +60,7 @@ pub(crate) async fn persistence_thread(
   let mut last_write = Instant::now();
   let throttle_interval = opts.throttle_fs.interval_ms as u128;
   let max_buffered_commands = opts.throttle_fs.max_buffered_commands;
+  let mut last_lockfile_refresh = Instant::now();
 
   // And compression attempts
   let mut last_compress = Instant::now();
@@ -78,6 +81,14 @@ pub(crate) async fn persistence_thread(
 
   let idle_duration = Duration::from_millis(20);
   loop {
+
+    // Refresh lockfile if necessary
+    if Instant::now().duration_since(last_lockfile_refresh).as_millis() >= lock.get_stale_interval_ms() {
+      lock.update()?;
+      last_lockfile_refresh = Instant::now();
+    }
+
+    // Figure out what to do
     let command = if (just_opened && opts.auto_compress.on_open)
       || need_to_compress_by_size(
         &opts.auto_compress,

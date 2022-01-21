@@ -4,6 +4,7 @@
 // import assert from 'assert'
 const { JsonlDB } = require(".");
 const { isArray, isObject } = require("alcalzone-shared/typeguards");
+const { wait } = require("alcalzone-shared/async");
 // import assert from 'assert'
 
 function makeObj(i) {
@@ -20,21 +21,6 @@ function makeObj(i) {
 	};
 }
 
-function needsStringify(value) {
-	if (!value || typeof value !== "object") return false;
-	if (isObject(value)) {
-		// Empirically, empty objects can be handled faster without stringifying
-		for (const _key in value) return true;
-		return false;
-	} else if (isArray(value)) {
-		// Empirically, arrays with length < 3 are faster without stringifying
-		// Check for nested objects though
-		// @ts-ignore
-		return value.length < 3 && !value.some((v) => needsStringify(v));
-	}
-	return false;
-}
-
 async function main() {
 	debugger;
 	const db = new JsonlDB(`test.txt`, {
@@ -43,12 +29,13 @@ async function main() {
 		// 	intervalMs: 500,
 		// 	//   maxBufferedCommands: 100000
 		// },
-		autoCompress: {
-			intervalMs: 500,
-			intervalMinChanges: 10000,
-			onOpen: true,
-			onClose: true,
-		},
+		// autoCompress: {
+		// 	intervalMs: 500,
+		// 	intervalMinChanges: 10000,
+		// 	onOpen: true,
+		// 	onClose: true,
+		// },
+		// lockfileDirectory: "test/locks",
 	});
 	// const jsdb = new JsonlDB_JS('test.txt', {
 	//   ignoreReadErrors: true,
@@ -58,11 +45,8 @@ async function main() {
 	await db.open();
 	console.timeEnd("open RS");
 
-	console.time("import RS");
-	await db.importJson({ key1: 1, key2: 2, key3: 3 });
-	console.timeEnd("import RS");
-
 	console.log(`size: `, db.size);
+
 
 	// let start = Date.now();
 	// let calls = 0;

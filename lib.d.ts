@@ -10,6 +10,7 @@ export interface JsonlDBOptions {
 	ignoreReadErrors?: boolean | undefined | null;
 	throttleFS?: JsonlDBOptionsThrottleFS | undefined | null;
 	autoCompress?: JsonlDBOptionsAutoCompress | undefined | null;
+	lockfileDirectory?: string | undefined | null;
 }
 export interface JsonlDBOptionsThrottleFS {
 	intervalMs: number;

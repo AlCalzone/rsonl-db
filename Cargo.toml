@@ -11,6 +11,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 derive_builder = "0.10.2"
+filetime = "0.2.15"
 indexmap = "1.8.0"
 # napi = { git = "https://github.com/zeroslope/napi-rs", branch = "fix/1013", features = ["napi4", "serde-json"] }
 # napi-derive = { git = "https://github.com/zeroslope/napi-rs", branch = "fix/1013" }
