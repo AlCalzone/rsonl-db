@@ -1,8 +1,9 @@
 {
   "name": "@alcalzone/rsonl-db",
   "version": "0.1.0",
-  "description": "rsonl-db implementation used by the Z-Wave protocol, implemented in Rust",
+  "description": "Simple JSONL-based key-value store",
   "main": "index.js",
+  "types": "index.d.ts",
   "repository": "https://github.com/zwave-js/rsonl-db",
   "license": "MIT",
   "keywords": [
