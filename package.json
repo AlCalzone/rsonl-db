@@ -1,6 +1,6 @@
 {
   "name": "@alcalzone/rsonl-db",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Simple JSONL-based key-value store",
   "main": "index.js",
   "types": "index.d.ts",
