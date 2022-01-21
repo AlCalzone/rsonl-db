@@ -1,7 +1,11 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.JsonlDB = void 0;
 const lib_1 = require("./lib");
+const path_1 = __importDefault(require("path"));
 /**
  * Tests whether the given variable is a real object and not an Array
  * @param it The variable to test
@@ -42,6 +46,10 @@ function needsStringify(value) {
 class JsonlDB {
     constructor(filename, options = {}) {
         this.validateOptions(options);
+        if (path_1.default.isAbsolute(filename)) {
+            filename = path_1.default.resolve(filename);
+        }
+        console.log(filename);
         this.db = new lib_1.JsonlDB(filename, options);
     }
     validateOptions(options /*<V>*/) {

@@ -1,4 +1,5 @@
 import { JsonlDB as JsonlDBNative, JsonlDBOptions } from "./lib";
+import path from "path";
 
 /**
  * Tests whether the given variable is a real object and not an Array
@@ -41,6 +42,9 @@ export class JsonlDB<V> implements Map<string, V> {
 
 	public constructor(filename: string, options: JsonlDBOptions /*<V>*/ = {}) {
 		this.validateOptions(options);
+		if (path.isAbsolute(filename)) {
+			filename = path.resolve(filename);
+		}
 		this.db = new JsonlDBNative(filename, options);
 	}
 

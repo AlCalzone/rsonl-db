@@ -37,7 +37,7 @@ function needsStringify(value) {
 
 async function main() {
 	debugger;
-	const db = new JsonlDB(`${__dirname}/test.txt`, {
+	const db = new JsonlDB(`test.txt`, {
 		// ignoreReadErrors: true,
 		// throttleFS: {
 		// 	intervalMs: 500,

@@ -1,4 +1,5 @@
 use std::io::Error;
+use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -11,6 +12,7 @@ use crate::bg_thread::{Command, ThreadHandle};
 use crate::db_options::DBOptions;
 use crate::persistence::persistence_thread;
 use crate::storage::{format_line, parse_entries, Entry, MapValue, SharedStorage, Storage};
+use crate::util::safe_parent;
 
 pub(crate) struct RsonlDB<S: DBState> {
   pub filename: String,
@@ -106,6 +108,9 @@ impl RsonlDB<Closed> {
   }
 
   pub async fn open(&self) -> Result<RsonlDB<Opened>, Error> {
+    // Make sure the DB dir exists
+    fs::create_dir_all(safe_parent(Path::new(&self.filename)).unwrap()).await?;
+
     // Make sure that there are no remains of a previous broken compress attempt
     // and restore a DB backup if it exists.
     self.try_recover_db_files().await?;
