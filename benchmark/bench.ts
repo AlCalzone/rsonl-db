@@ -1,174 +1,158 @@
 // /* eslint-disable @typescript-eslint/prefer-for-of */
-// import b from 'benny'
+import b from "benny";
 
 // import { serializeTest } from '../index'
+import { JsonlDB } from "../";
 
-// export function serialize_js(str: unknown): string {
-//   // if (str === undefined) return 0
-//   // if (str === null) return 1
-//   // if (typeof str === 'boolean') return 2
-//   // if (typeof str === 'number') return 3
-//   // if (typeof str === 'string') return 4
-//   // if (typeof str === 'symbol') return 5
-//   // if (typeof str === 'object') return 6
-//   // if (typeof str === 'function') return 7
-//   // if (typeof str === 'bigint') return 9
-//   // return 1024
-//   return JSON.stringify(str)
-// }
+async function run() {
+	const db = new JsonlDB(`test.txt`, {
+		autoCompress: {
+			sizeFactor: 2,
+			sizeFactorMinimumSize: 25000,
+		},
+		ignoreReadErrors: true,
+		throttleFS: {
+			intervalMs: 60000,
+			maxBufferedCommands: 1000,
+		},
+		indexPaths: ["/type"],
+	});
 
-// // /**
-// //  * Checks if there's enough data in the buffer to deserialize a complete message
-// //  */
-// // function containsCompleteMessage(data: Buffer, offset: number, actualLength: number): boolean {
-// //   return actualLength >= 1 + offset && actualLength >= data[offset]
-// // }
+	await db.open();
+	db.clear();
 
-// // enum MsgType {
-// //   Number = 0,
-// //   String = 1,
-// // }
+	function addObj(i: number) {
+		db.set(`benchmark.0.test.${i}`, makeObj(i));
+	}
 
-// // // type Msg =
-// // //   | {
-// // //       type: MsgType.Number
-// // //       value: number
-// // //     }
-// // //   | {
-// // //       type: MsgType.String
-// // //       value: string
-// // //     }
+	function makeObj(i: number) {
+		return {
+			type: "state",
+			common: {
+				name: i.toString(),
+				read: true,
+				write: true,
+				role: "state",
+				type: "number",
+			},
+			native: {},
+		};
+	}
 
-// // async function* decode(strm: Readable): AsyncIterableIterator<any> {
-// //   let receiveBuffer = Buffer.allocUnsafe(32 * 1024)
-// //   let bufLen = 0
+	function addOtherObj(i: number) {
+		db.set(`benchmark.0.test.${i}meta`, {
+			type: "meta",
+			common: {
+				name: i.toString(),
+				type: "meta.folder",
+			},
+			native: {},
+		});
+	}
 
-// //   for await (const chunk of strm) {
-// //     ;(chunk as Buffer).copy(receiveBuffer, bufLen)
-// //     bufLen += chunk.length
+	const noAllObjects = 10000;
+	const randomize = false;
+	const percentageOther = 98;
+	for (let i = 1; i <= noAllObjects; i++) {
+		if (randomize) {
+			if (Math.random() * 100 <= percentageOther) {
+				addOtherObj(i);
+			} else {
+				addObj(i);
+			}
+		} else {
+			if (i <= (percentageOther / 100) * noAllObjects) {
+				addOtherObj(i);
+			} else {
+				addObj(i);
+			}
+		}
+	}
 
-// //     let offset = 0
-// //     const values: any[] = []
-// //     while (containsCompleteMessage(receiveBuffer, offset, bufLen)) {
-// //       // We have at least one complete message
-// //       const len = receiveBuffer[offset]
-// //       const rawMsg = receiveBuffer.slice(1 + offset, len + offset)
-// //       offset += len
+	await db.close();
+	await db.open();
 
-// //       const msgType = rawMsg[0]
-// //       let value: any
-// //       switch (msgType) {
-// //         case MsgType.Number:
-// //           value = rawMsg.readInt32BE(1, true)
-// //           break
-// //         case MsgType.String:
-// //           value = rawMsg.toString('utf8', 1)
-// //           break
-// //         default:
-// //           throw new Error(`Unknown message type ${msgType}`)
-// //       }
+	// assert.deepStrictEqual(db.get("benchmark.0.test.1"), {
+	// 	type: "state",
+	// 	common: {
+	// 		name: "1",
+	// 		read: true,
+	// 		write: true,
+	// 		role: "state",
+	// 		type: "number",
+	// 	},
+	// 	native: {},
+	// });
 
-// //       values.push(value)
-// //     }
+	// let calls = 0;
+	function getObjectView(opts: { startkey: string; endkey: string }) {
+		for (const key of db.keys()) {
+			if (key < opts.startkey || key > opts.endkey) continue;
+			db.get(key, "/type=state");
+			// const obj = db.get(key, "/type=state");
+			// if (obj) calls++;
+		}
+	}
 
-// //     if (offset > 0) {
-// //       receiveBuffer = skipBytes(receiveBuffer, offset)
-// //       bufLen -= offset
-// //     }
+	// getObjectView({
+	// 	startkey: "benchmark.0.test",
+	// 	endkey: "benchmark.0.test\u9999",
+	// });
 
-// //     yield* values
-// //   }
+	// console.log("calls", calls);
 
-// //   // console.log('decode done')
-// // }
+	// process.exit(0);
 
-// // function encode(value: any): Buffer {
-// //   let buf: Buffer
-// //   switch (typeof value) {
-// //     case 'number':
-// //       buf = Buffer.allocUnsafe(6)
-// //       buf[0] = 6
-// //       buf[1] = MsgType.Number
-// //       buf.writeInt32BE(value, 2)
-// //       break
-// //     case 'string':
-// //       buf = Buffer.allocUnsafe(value.length + 2)
-// //       buf[0] = value.length + 2
-// //       buf[1] = MsgType.String
-// //       buf.write(value, 2)
-// //       break
-// //     default:
-// //       throw new Error(`Unknown message type ${typeof value}`)
-// //   }
-// //   return buf
-// // }
+	await b.suite(
+		"rsonl-db",
 
-// // export function skipBytes(buf: Buffer, n: number): Buffer {
-// //   return buf.copyWithin(0, n)
-// // }
+		b.add("getObjectView", () => {
+			getObjectView({
+				startkey: "benchmark.0.test",
+				endkey: "benchmark.0.test\u9999",
+			});
+		}),
 
-// // async function streamObjectMode() {
-// //   const ps = new PassThrough({
-// //     objectMode: true,
-// //   })
+		// b.add("getObject", async () => {
+		// 	db.get("benchmark.0.test.1");
+		// }),
 
-// //   setImmediate(() => {
-// //     for (let i = 1; i <= 1000; i++) {
-// //       ps.write('Hello World')
-// //     }
-// //     ps.end()
-// //   })
+		// b.add("getObjectNull", async () => {
+		// 	db.get("benchmark.0.foobar");
+		// }),
 
-// //   let counter = 0
-// //   for await (const item of ps) {
-// //     assert(typeof item === 'string')
-// //     counter++
-// //   }
-// //   assert(counter === 1000)
-// // }
+		b.add("setObject", async () => {
+			db.set("test-key", makeObj(5));
+		}),
 
-// // async function stream() {
-// //   const ps = new PassThrough()
+		// b.add("getKeys", async () => {
+		// 	for (const key of db.keys()) {
+		// 	}
+		// }),
 
-// //   setImmediate(() => {
-// //     for (let i = 1; i <= 1000; i++) {
-// //       ps.write(encode('foobar'))
-// //     }
-// //     ps.end()
-// //   })
+		// b.add("spreadKeys", async () => {
+		// 	[...db.keys()];
+		// }),
 
-// //   let counter = 0
-// //   for await (const item of decode(ps)) {
-// //     assert(typeof item === 'string')
-// //     counter++
-// //   }
-// //   assert(counter === 1000)
-// // }
+		// b.add("getKeys -> getObj", async () => {
+		// 	for (const key of db.keys()) {
+		// 		db.get(key);
+		// 	}
+		// }),
 
-// // const values = [1, 1.0, 0xffff, 0xfffffffe, '', 'abc', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', true, false, null]
-// const values = [0x7fffffff, 0x80000000, 0xffffffff]
+		// b.add("spreadKeys -> getObj", async () => {
+		// 	for (const key of [...db.keys()]) {
+		// 		db.get(key);
+		// 	}
+		// }),
 
-// async function run() {
-//   await b.suite(
-//     'rsonl-db',
+		b.cycle(),
+		b.complete(),
+	);
 
-//     ...values.map((val) =>
-//       b.add(`JS: 0x${val.toString(16)}`, () => {
-//         serialize_js(val)
-//       }),
-//     ),
-//     ...values.map((val) =>
-//       b.add(`Rust: 0x${val.toString(16)}`, () => {
-//         serializeTest(val)
-//       }),
-//     ),
+	await db.close();
+}
 
-//     b.cycle(),
-//     b.complete(),
-//     b.save({ file: 'JSvRS', format: 'chart.html' }),
-//   )
-// }
-
-// run().catch((e) => {
-//   console.error(e)
-// })
+run().catch((e) => {
+	console.error(e);
+});

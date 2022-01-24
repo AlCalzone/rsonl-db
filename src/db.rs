@@ -1,6 +1,5 @@
 use std::io::Error;
 use std::path::Path;
-use std::str::FromStr;
 use std::sync::Arc;
 
 use serde_json::{Map, Value};
@@ -12,7 +11,7 @@ use crate::bg_thread::{Command, ThreadHandle};
 use crate::db_options::DBOptions;
 use crate::lockfile::Lockfile;
 use crate::persistence::persistence_thread;
-use crate::storage::{format_line, parse_entries, Entry, MapValue, SharedStorage, Storage};
+use crate::storage::{format_line, parse_entries, Entry, SharedStorage, Storage};
 use crate::util::{replace_dirname, safe_parent};
 
 pub(crate) struct RsonlDB<S: DBState> {
@@ -136,6 +135,7 @@ impl RsonlDB<Closed> {
 
     // Read the entire file. This also puts the cursor at the end, so we can start writing
     let entries = parse_entries(&mut file, self.options.ignore_read_errors).await?;
+
     let journal = Vec::<String>::new();
     let storage = SharedStorage::new(Storage { entries, journal });
 
@@ -195,18 +195,15 @@ impl RsonlDB<Opened> {
     })
     .unwrap();
 
-    self
-      .state
-      .storage
-      .insert(key, MapValue::Raw(value), stringified);
+    self.state.storage.insert(key, value, stringified);
   }
 
   pub fn set_stringified(&mut self, key: String, value: String) {
     let stringified = format_line(&key, &value);
-    self
-      .state
-      .storage
-      .insert(key, MapValue::Stringified(value), stringified);
+
+    let parsed: serde_json::Value = serde_json::from_str(&value).unwrap();
+
+    self.state.storage.insert(key, parsed, stringified);
   }
 
   pub fn delete(&mut self, key: String) -> bool {
@@ -228,10 +225,54 @@ impl RsonlDB<Opened> {
 
   pub fn get(&mut self, key: &String) -> Option<serde_json::Value> {
     let entries = &self.state.storage.lock().unwrap().entries;
-    match entries.get(key) {
-      Some(MapValue::Raw(val)) => Some(val.clone()),
-      Some(MapValue::Stringified(str)) => Some(serde_json::Value::from_str(&str.clone()).unwrap()),
-      None => None,
+    entries.get(key).and_then(|f| Some(f.clone()))
+  }
+
+  pub fn get_fast(
+    &mut self,
+    key: &String,
+    obj_filter: Option<String>,
+  ) -> Option<serde_json::Value> {
+    if let Some(value) = self.get(key) {
+      // If a filter is given, check if the value matches the filter
+      if let Some(obj_filter) = obj_filter {
+        // Test if the value matches the filter
+        if let Some((filter_path, filter_val)) = obj_filter.split_once('=') {
+          match value.pointer(filter_path).map_or(None, |v| v.as_str()) {
+            Some(v) if v == filter_val => {
+              // Matches, return the value
+            }
+            // No match
+            _ => return None,
+          }
+        } else {
+          // no valid filter expression
+        }
+      }
+
+      // No filter, just return the value
+      match value {
+        serde_json::Value::Array(_) => {
+          let mut str = serde_json::to_string(&value).unwrap();
+          // Indicate that this string is a serialized object/array
+          str.insert(0, '\x01');
+          Some(serde_json::Value::from(str))
+        }
+        serde_json::Value::Object(_) => {
+          let mut str = serde_json::to_string(&value).unwrap();
+          // Indicate that this string is a serialized object/array
+          str.insert(0, '\x01');
+          Some(serde_json::Value::from(str))
+        }
+
+        serde_json::Value::String(str) => {
+          let str = format!("\0{}", &str);
+          Some(serde_json::Value::from(str))
+        }
+        o => Some(o),
+      }
+    } else {
+      None
     }
   }
 
@@ -302,7 +343,7 @@ impl RsonlDB<Opened> {
       .await?;
 
     let map =
-      Map::<String, Value>::from_iter(entries.iter().map(|(k, v)| (k.to_owned(), Value::from(v))));
+      Map::<String, Value>::from_iter(entries.iter().map(|(k, v)| (k.to_owned(), v.to_owned())));
     let json = if pretty {
       serde_json::to_string_pretty(&map)?
     } else {
@@ -342,7 +383,7 @@ impl RsonlDB<Opened> {
       })
       .unwrap();
 
-      storage.entries.insert(key, MapValue::Raw(value));
+      storage.entries.insert(key, value);
       storage.journal.push(stringified);
     }
 

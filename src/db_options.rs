@@ -7,6 +7,7 @@ pub struct DBOptions {
   pub(crate) auto_compress: AutoCompressOptions,
   pub(crate) throttle_fs: ThrottleFSOptions,
   pub(crate) lockfile_directory: String,
+  pub(crate) index_paths: Vec<String>,
 }
 
 impl Default for DBOptions {
@@ -16,6 +17,7 @@ impl Default for DBOptions {
       auto_compress: AutoCompressOptions::default(),
       throttle_fs: ThrottleFSOptions::default(),
       lockfile_directory: ".".to_owned(),
+      index_paths: Vec::new(),
     }
   }
 }

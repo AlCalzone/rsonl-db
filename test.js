@@ -33,6 +33,7 @@ async function main() {
 			intervalMs: 60000,
 			maxBufferedCommands: 1000,
 		},
+		indexPaths: ["/type"],
 	});
 	// const jsdb = new JsonlDB_JS('test.txt', {
 	//   ignoreReadErrors: true,

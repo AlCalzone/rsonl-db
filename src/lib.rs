@@ -20,9 +20,9 @@ mod bg_thread;
 mod db;
 mod db_options;
 mod jsonldb_options;
+mod lockfile;
 mod persistence;
 mod storage;
-mod lockfile;
 mod util;
 
 #[macro_use]
@@ -148,6 +148,12 @@ impl JsonlDB {
   }
 
   #[napi]
+  pub fn get_fast(&mut self, key: String, obj_filter: Option<String>) -> Result<Option<serde_json::Value>> {
+    let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
+    Ok(db.get_fast(&key, obj_filter))
+  }
+
+  #[napi]
   pub fn clear(&mut self) -> Result<()> {
     let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
     db.clear();
@@ -180,6 +186,14 @@ impl JsonlDB {
   pub fn get_keys(&mut self) -> Result<Vec<String>> {
     let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
     Ok(db.all_keys())
+  }
+
+  #[napi]
+  pub fn get_keys_stringified(&mut self) -> Result<String> {
+    let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
+    let ret = db.all_keys();
+    let ret = serde_json::to_string(&ret)?;
+    Ok(ret)
   }
 
   #[napi]

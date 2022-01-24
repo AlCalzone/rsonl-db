@@ -261,7 +261,7 @@ async fn dump(
 
   // Print all items
   for (key, val) in data {
-    writer.write(format_line(&key, val).as_bytes()).await?;
+    writer.write(format_line(&key, val.to_string()).as_bytes()).await?;
     writer.write(b"\n").await?;
   }
 

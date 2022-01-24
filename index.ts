@@ -84,6 +84,7 @@ export class JsonlDB<V> implements Map<string, V> {
 	}
 
 	public open(): Promise<void> {
+		this._keysCache = undefined;
 		return this.db.open();
 	}
 	public close(): Promise<void> {
@@ -109,15 +110,18 @@ export class JsonlDB<V> implements Map<string, V> {
 	}
 
 	public clear(): void {
+		this._keysCache?.clear();
 		this.db.clear();
 	}
 
 	public delete(key: string): boolean {
+		this._keysCache?.delete(key);
 		return this.db.delete(key);
 	}
 
 	// The set method is more performant for some values when we stringify them in JS code
 	public set(key: string, value: V): this {
+		this._keysCache?.add(key);
 		if (needsStringify(value)) {
 			this.db.setStringified(key, JSON.stringify(value));
 		} else {
@@ -126,8 +130,20 @@ export class JsonlDB<V> implements Map<string, V> {
 		return this;
 	}
 
-	public get(key: string): V | undefined {
-		return this.db.get(key);
+	public get(key: string, objectFilter?: string): V | undefined {
+		// return this.db.get(key);
+		const ret = this.db.getFast(key, objectFilter);
+		if (typeof ret === "string") {
+			if (ret.startsWith("\x00")) {
+				return ret.slice(1) as unknown as V;
+			} else if (ret.startsWith("\x01")) {
+				return JSON.parse(ret.slice(1)) as V;
+			} else {
+				throw new Error("Unexpected response to getFast!");
+			}
+		} else {
+			return ret;
+		}
 	}
 	public has(key: string): boolean {
 		return this.db.has(key);
@@ -145,18 +161,25 @@ export class JsonlDB<V> implements Map<string, V> {
 		});
 	}
 
+	private _keysCache: Set<string> | undefined;
+	private getKeysCached(): Set<string> {
+		if (!this._keysCache) {
+			this._keysCache = new Set(JSON.parse(this.db.getKeysStringified()));
+		}
+		return this._keysCache;
+	}
+
 	public keys(): IterableIterator<string> {
 		const that = this;
 		return (function* () {
-			const allKeys = that.db.getKeys();
-			for (const k of allKeys) yield k;
+			for (const k of that.getKeysCached()) yield k;
 		})();
 	}
 
 	public entries(): IterableIterator<[string, V]> {
 		const that = this;
 		return (function* () {
-			for (const k of that.keys()) {
+			for (const k of that.getKeysCached()) {
 				yield [k, that.get(k)!];
 			}
 		})();
@@ -165,7 +188,7 @@ export class JsonlDB<V> implements Map<string, V> {
 	public values(): IterableIterator<V> {
 		const that = this;
 		return (function* () {
-			for (const k of that.keys()) {
+			for (const k of that.getKeysCached()) {
 				yield that.get(k)!;
 			}
 		})();
@@ -190,6 +213,7 @@ export class JsonlDB<V> implements Map<string, V> {
 	public importJson(
 		jsonOrFile: Record<string, any> | string,
 	): void | Promise<void> {
+		this._keysCache = undefined;
 		if (typeof jsonOrFile === "string") {
 			return this.db.importJsonFile(jsonOrFile);
 		} else {

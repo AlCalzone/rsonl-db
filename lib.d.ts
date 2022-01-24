@@ -11,6 +11,7 @@ export interface JsonlDBOptions {
 	throttleFS?: JsonlDBOptionsThrottleFS | undefined | null;
 	autoCompress?: JsonlDBOptionsAutoCompress | undefined | null;
 	lockfileDirectory?: string | undefined | null;
+	indexPaths?: Array<string> | undefined | null;
 }
 export interface JsonlDBOptionsThrottleFS {
 	intervalMs: number;
@@ -36,10 +37,15 @@ export class JsonlDB {
 	delete(key: string): boolean;
 	has(key: string): boolean;
 	get(key: string): any | undefined | null;
+	getFast(
+		key: string,
+		objFilter?: string | undefined | null,
+	): any | undefined | null;
 	clear(): void;
 	get size(): number;
 	forEach(callback: (value: any, key: string) => void): void;
 	getKeys(): Array<string>;
+	getKeysStringified(): string;
 	exportJson(filename: string, pretty: boolean): Promise<void>;
 	importJsonFile(filename: string): Promise<void>;
 	importJsonString(json: string): void;

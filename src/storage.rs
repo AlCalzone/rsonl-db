@@ -8,39 +8,6 @@ use tokio::{
   io::{AsyncBufReadExt, BufReader},
 };
 
-#[derive(Clone)]
-pub(crate) enum MapValue {
-  Stringified(String),
-  Raw(serde_json::Value),
-}
-
-impl From<MapValue> for serde_json::Value {
-  fn from(val: MapValue) -> Self {
-    match val {
-      MapValue::Stringified(str) => serde_json::from_str(&str).unwrap(),
-      MapValue::Raw(v) => v,
-    }
-  }
-}
-
-impl From<&MapValue> for serde_json::Value {
-  fn from(val: &MapValue) -> Self {
-    match val {
-      MapValue::Stringified(str) => serde_json::from_str(str).unwrap(),
-      MapValue::Raw(v) => v.clone(),
-    }
-  }
-}
-
-impl Into<String> for MapValue {
-  fn into(self) -> String {
-    match self {
-      MapValue::Stringified(str) => str,
-      MapValue::Raw(v) => serde_json::to_string(&v).unwrap(),
-    }
-  }
-}
-
 pub(crate) fn format_line(key: &str, val: impl Into<String>) -> String {
   format!(
     "{{\"k\":{},\"v\":{}}}",
@@ -59,15 +26,15 @@ pub(crate) enum Entry {
 pub(crate) async fn parse_entries(
   file: &mut File,
   ignore_read_errors: bool,
-) -> Result<IndexMap<String, MapValue>, Error> {
-  let mut entries = IndexMap::<String, MapValue>::new();
+) -> Result<IndexMap<String, serde_json::Value>, Error> {
+  let mut entries = IndexMap::<String, serde_json::Value>::new();
 
   let mut lines = BufReader::new(file).lines();
   while let Some(line) = lines.next_line().await? {
     let entry = serde_json::from_str::<Entry>(&line);
     match entry {
       Ok(Entry::Value { k, v }) => {
-        entries.insert(k, MapValue::Raw(v));
+        entries.insert(k, v);
       }
       Ok(Entry::Delete { k }) => {
         entries.remove(&k);
@@ -86,9 +53,10 @@ pub(crate) async fn parse_entries(
 }
 
 pub(crate) type Journal = Vec<String>;
+// (Map: index path => (Map: index value => (object keys[])))
 
 pub(crate) struct Storage {
-  pub entries: IndexMap<String, MapValue>,
+  pub entries: IndexMap<String, serde_json::Value>,
   pub journal: Journal,
 }
 
@@ -113,7 +81,7 @@ impl SharedStorage {
     entries.len()
   }
 
-  pub fn insert(&mut self, key: String, value: MapValue, stringified: String) {
+  pub fn insert(&mut self, key: String, value: serde_json::Value, stringified: String) {
     let mut storage = self.lock().unwrap();
     storage.entries.insert(key, value);
     storage.journal.push(stringified);

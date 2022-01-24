@@ -79,6 +79,7 @@ class JsonlDB {
         }
     }
     open() {
+        this._keysCache = undefined;
         return this.db.open();
     }
     close() {
@@ -99,13 +100,19 @@ class JsonlDB {
         this._compressPromise = undefined;
     }
     clear() {
+        var _a;
+        (_a = this._keysCache) === null || _a === void 0 ? void 0 : _a.clear();
         this.db.clear();
     }
     delete(key) {
+        var _a;
+        (_a = this._keysCache) === null || _a === void 0 ? void 0 : _a.delete(key);
         return this.db.delete(key);
     }
     // The set method is more performant for some values when we stringify them in JS code
     set(key, value) {
+        var _a;
+        (_a = this._keysCache) === null || _a === void 0 ? void 0 : _a.add(key);
         if (needsStringify(value)) {
             this.db.setStringified(key, JSON.stringify(value));
         }
@@ -114,8 +121,23 @@ class JsonlDB {
         }
         return this;
     }
-    get(key) {
-        return this.db.get(key);
+    get(key, objectFilter) {
+        // return this.db.get(key);
+        const ret = this.db.getFast(key, objectFilter);
+        if (typeof ret === "string") {
+            if (ret.startsWith("\x00")) {
+                return ret.slice(1);
+            }
+            else if (ret.startsWith("\x01")) {
+                return JSON.parse(ret.slice(1));
+            }
+            else {
+                throw new Error("Unexpected response to getFast!");
+            }
+        }
+        else {
+            return ret;
+        }
     }
     has(key) {
         return this.db.has(key);
@@ -128,18 +150,23 @@ class JsonlDB {
             callback.call(thisArg, v, k, this);
         });
     }
+    getKeysCached() {
+        if (!this._keysCache) {
+            this._keysCache = new Set(JSON.parse(this.db.getKeysStringified()));
+        }
+        return this._keysCache;
+    }
     keys() {
         const that = this;
         return (function* () {
-            const allKeys = that.db.getKeys();
-            for (const k of allKeys)
+            for (const k of that.getKeysCached())
                 yield k;
         })();
     }
     entries() {
         const that = this;
         return (function* () {
-            for (const k of that.keys()) {
+            for (const k of that.getKeysCached()) {
                 yield [k, that.get(k)];
             }
         })();
@@ -147,7 +174,7 @@ class JsonlDB {
     values() {
         const that = this;
         return (function* () {
-            for (const k of that.keys()) {
+            for (const k of that.getKeysCached()) {
                 yield that.get(k);
             }
         })();
@@ -162,6 +189,7 @@ class JsonlDB {
         await this.db.exportJson(filename, pretty);
     }
     importJson(jsonOrFile) {
+        this._keysCache = undefined;
         if (typeof jsonOrFile === "string") {
             return this.db.importJsonFile(jsonOrFile);
         }
