@@ -145,6 +145,16 @@ export class JsonlDB<V> implements Map<string, V> {
 			return ret;
 		}
 	}
+
+	public getMany(
+		startkey: string,
+		endkey: string,
+		objectFilter?: string,
+	): V[] {
+		// return this.db.get(key);
+		return JSON.parse(this.db.getMany(startkey, endkey, objectFilter));
+	}
+
 	public has(key: string): boolean {
 		return this.db.has(key);
 	}

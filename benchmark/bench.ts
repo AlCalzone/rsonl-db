@@ -22,7 +22,10 @@ async function run() {
 	db.clear();
 
 	function addObj(i: number) {
-		db.set(`benchmark.0.test.${i}`, makeObj(i));
+		db.set(`benchmark.0.test.${i}`, {
+			...makeObj(i),
+			_id: `benchmark.0.test.${i}`,
+		});
 	}
 
 	function makeObj(i: number) {
@@ -41,6 +44,7 @@ async function run() {
 
 	function addOtherObj(i: number) {
 		db.set(`benchmark.0.test.${i}meta`, {
+			_id: `benchmark.0.test.${i}meta`,
 			type: "meta",
 			common: {
 				name: i.toString(),
@@ -51,7 +55,7 @@ async function run() {
 	}
 
 	const noAllObjects = 10000;
-	const randomize = false;
+	const randomize = false; //true;
 	const percentageOther = 98;
 	for (let i = 1; i <= noAllObjects; i++) {
 		if (randomize) {
@@ -69,8 +73,8 @@ async function run() {
 		}
 	}
 
-	await db.close();
-	await db.open();
+	// await db.close();
+	// await db.open();
 
 	// assert.deepStrictEqual(db.get("benchmark.0.test.1"), {
 	// 	type: "state",
@@ -86,22 +90,24 @@ async function run() {
 
 	// let calls = 0;
 	function getObjectView(opts: { startkey: string; endkey: string }) {
-		for (const key of db.keys()) {
-			if (key < opts.startkey || key > opts.endkey) continue;
-			db.get(key, "/type=state");
-			// const obj = db.get(key, "/type=state");
-			// if (obj) calls++;
-		}
+		return db.getMany(opts.startkey, opts.endkey, "/type=state");
+		// for (const key of db.keys()) {
+		// 	if (key < opts.startkey || key > opts.endkey) continue;
+		// 	db.get(key, "/type=state");
+		// 	// db.get(key);
+		// 	// const obj = db.get(key, "/type=state");
+		// 	// if (obj) calls++;
+		// }
 	}
 
-	// getObjectView({
-	// 	startkey: "benchmark.0.test",
-	// 	endkey: "benchmark.0.test\u9999",
-	// });
+	const calls = getObjectView({
+		startkey: "benchmark.0.test",
+		endkey: "benchmark.0.test\u9999",
+	}).length;
 
-	// console.log("calls", calls);
+	console.log("calls", calls);
 
-	// process.exit(0);
+	process.exit(0);
 
 	await b.suite(
 		"rsonl-db",
@@ -113,13 +119,13 @@ async function run() {
 			});
 		}),
 
-		// b.add("getObject", async () => {
-		// 	db.get("benchmark.0.test.1");
-		// }),
+		b.add("getObject", async () => {
+			db.get("benchmark.0.test.1");
+		}),
 
-		// b.add("getObjectNull", async () => {
-		// 	db.get("benchmark.0.foobar");
-		// }),
+		b.add("getObjectNull", async () => {
+			db.get("benchmark.0.foobar");
+		}),
 
 		b.add("setObject", async () => {
 			db.set("test-key", makeObj(5));

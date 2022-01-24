@@ -41,6 +41,11 @@ export class JsonlDB {
 		key: string,
 		objFilter?: string | undefined | null,
 	): any | undefined | null;
+	getMany(
+		startKey: string,
+		endKey: string,
+		objFilter?: string | undefined | null,
+	): string;
 	clear(): void;
 	get size(): number;
 	forEach(callback: (value: any, key: string) => void): void;

@@ -148,9 +148,25 @@ impl JsonlDB {
   }
 
   #[napi]
-  pub fn get_fast(&mut self, key: String, obj_filter: Option<String>) -> Result<Option<serde_json::Value>> {
+  pub fn get_fast(
+    &mut self,
+    key: String,
+    obj_filter: Option<String>,
+  ) -> Result<Option<serde_json::Value>> {
     let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
     Ok(db.get_fast(&key, obj_filter))
+  }
+
+  #[napi]
+  pub fn get_many(
+    &mut self,
+    start_key: String,
+    end_key: String,
+    obj_filter: Option<String>,
+  ) -> Result<String> {
+    let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
+    let ret = serde_json::to_string(&db.get_many(&start_key, &end_key, obj_filter))?;
+    Ok(ret)
   }
 
   #[napi]

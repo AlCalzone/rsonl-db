@@ -139,6 +139,10 @@ class JsonlDB {
             return ret;
         }
     }
+    getMany(startkey, endkey, objectFilter) {
+        // return this.db.get(key);
+        return JSON.parse(this.db.getMany(startkey, endkey, objectFilter));
+    }
     has(key) {
         return this.db.has(key);
     }

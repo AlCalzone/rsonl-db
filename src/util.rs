@@ -46,3 +46,26 @@ pub(crate) fn replace_dirname(
   let ret: PathBuf = [basename, dirname.as_ref(), filename].iter().collect();
   Ok(ret)
 }
+
+pub(crate) fn fmt_transport(value: serde_json::Value) -> serde_json::Value {
+  match value {
+    serde_json::Value::Array(_) => {
+      let mut str = serde_json::to_string(&value).unwrap();
+      // Indicate that this string is a serialized object/array
+      str.insert(0, '\x01');
+      serde_json::Value::from(str)
+    }
+    serde_json::Value::Object(_) => {
+      let mut str = serde_json::to_string(&value).unwrap();
+      // Indicate that this string is a serialized object/array
+      str.insert(0, '\x01');
+      serde_json::Value::from(str)
+    }
+
+    serde_json::Value::String(str) => {
+      let str = format!("\0{}", &str);
+      serde_json::Value::from(str)
+    }
+    o => o,
+  }
+}

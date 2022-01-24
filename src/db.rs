@@ -12,7 +12,7 @@ use crate::db_options::DBOptions;
 use crate::lockfile::Lockfile;
 use crate::persistence::persistence_thread;
 use crate::storage::{format_line, parse_entries, Entry, SharedStorage, Storage};
-use crate::util::{replace_dirname, safe_parent};
+use crate::util::{replace_dirname, safe_parent, fmt_transport};
 
 pub(crate) struct RsonlDB<S: DBState> {
   pub filename: String,
@@ -251,29 +251,40 @@ impl RsonlDB<Opened> {
       }
 
       // No filter, just return the value
-      match value {
-        serde_json::Value::Array(_) => {
-          let mut str = serde_json::to_string(&value).unwrap();
-          // Indicate that this string is a serialized object/array
-          str.insert(0, '\x01');
-          Some(serde_json::Value::from(str))
-        }
-        serde_json::Value::Object(_) => {
-          let mut str = serde_json::to_string(&value).unwrap();
-          // Indicate that this string is a serialized object/array
-          str.insert(0, '\x01');
-          Some(serde_json::Value::from(str))
-        }
-
-        serde_json::Value::String(str) => {
-          let str = format!("\0{}", &str);
-          Some(serde_json::Value::from(str))
-        }
-        o => Some(o),
-      }
+      Some(fmt_transport(value))
     } else {
       None
     }
+  }
+
+  pub fn get_many(
+    &mut self,
+    start_key: &str,
+    end_key: &str,
+    obj_filter: Option<String>,
+  ) -> Vec<serde_json::Value> {
+    let mut ret = Vec::new();
+    let obj_filter = obj_filter.as_ref().map_or(None, |v| v.split_once('='));
+
+    let entries = &self.state.storage.lock().unwrap().entries;
+    for (key, value) in entries {
+      if start_key.gt(key.as_str()) || end_key.lt(key.as_str()) {
+        continue;
+      }
+
+      // Test if the value matches the filter
+      if let Some((filter_path, filter_val)) = obj_filter {
+        match value.pointer(filter_path).map_or(None, |v| v.as_str()) {
+          Some(v) if v == filter_val => {
+            // Matches, return the value
+            ret.push(value.clone());
+          }
+          // No match
+          _ => continue,
+        }
+      }
+    }
+    ret
   }
 
   pub fn size(&mut self) -> usize {
