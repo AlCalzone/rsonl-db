@@ -14,6 +14,8 @@ pub struct JsonlDBOptions {
   pub auto_compress: Option<JsonlDBOptionsAutoCompress>,
   #[napi]
   pub lockfile_directory: Option<String>,
+  #[napi]
+  pub index_paths: Option<Vec<String>>,
 }
 
 #[napi(object, js_name = "JsonlDBOptionsThrottleFS")]
@@ -47,6 +49,7 @@ impl Default for JsonlDBOptions {
       throttle_fs: None,
       auto_compress: None,
       lockfile_directory: None,
+      index_paths: None,
     }
   }
 }
@@ -94,6 +97,10 @@ impl Into<DBOptions> for JsonlDBOptions {
 
     if let Some(lockfile_directory) = self.lockfile_directory {
       ret.lockfile_directory(lockfile_directory);
+    }
+
+    if let Some(index_paths) = self.index_paths {
+      ret.index_paths(index_paths);
     }
 
     ret.build().unwrap()

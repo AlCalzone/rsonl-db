@@ -14,9 +14,8 @@ use crate::db_options::DBOptions;
 use crate::js_values::{map_to_object, vec_to_array, JsValue};
 use crate::lockfile::Lockfile;
 use crate::persistence::persistence_thread;
-use crate::storage::DBEntry;
-use crate::storage::{parse_entries, JournalEntry, SharedStorage, Storage};
-use crate::util::{obj_matches_filter, replace_dirname, safe_parent};
+use crate::storage::{parse_entries, DBEntry, Index, JournalEntry, SharedStorage, Storage};
+use crate::util::{replace_dirname, safe_parent};
 
 pub(crate) struct RsonlDB<S: DBState> {
   pub filename: String,
@@ -33,6 +32,7 @@ pub(crate) struct HalfClosed {
 
 pub(crate) struct Opened {
   storage: SharedStorage,
+  index: Index,
   persistence_thread: ThreadHandle<()>,
   compress_promise: Option<Arc<Notify>>,
 }
@@ -149,6 +149,9 @@ impl RsonlDB<Closed> {
     // Read the entire file. This also puts the cursor at the end, so we can start writing
     let entries = parse_entries(&mut file, self.options.ignore_read_errors).await?;
     let journal = Vec::<JournalEntry>::new();
+    let mut index = Index::new(self.options.index_paths.clone());
+    index.add_entries_checked(&entries);
+
     let storage = SharedStorage::new(Storage { entries, journal });
 
     let filename = self.filename.clone();
@@ -169,7 +172,7 @@ impl RsonlDB<Closed> {
       options: self.options.clone(),
       state: Opened {
         storage,
-        // js_storage: IndexMap::new(),
+        index,
         persistence_thread: ThreadHandle {
           thread: Box::new(thread),
           tx,
@@ -225,10 +228,18 @@ impl RsonlDB<Opened> {
   }
 
   pub fn set_native(&mut self, key: String, value: serde_json::Value) {
+    self.state.index.add_value_checked(&key, &value);
     self.state.storage.insert(key, DBEntry::Native(value));
   }
 
-  pub fn set_reference(&mut self, key: String, stringified: String, obj: Ref<()>) {
+  pub fn set_reference(
+    &mut self,
+    key: String,
+    obj: Ref<()>,
+    stringified: String,
+    index_keys: Vec<String>,
+  ) {
+    self.state.index.add_many(&key, index_keys);
     self
       .state
       .storage
@@ -240,11 +251,13 @@ impl RsonlDB<Opened> {
       return false;
     };
 
+    self.state.index.remove(&key);
     self.state.storage.remove(key);
     true
   }
 
   pub fn clear(&mut self) {
+    self.state.index.clear();
     self.state.storage.clear();
   }
 
@@ -269,22 +282,27 @@ impl RsonlDB<Opened> {
     let mut ret = Vec::new();
 
     let entries = &mut self.state.storage.lock().unwrap().entries;
-    let keys: Vec<String> = entries
-      .keys()
+
+    let mut keys: Vec<String> = { entries.keys().cloned().into_iter().collect() };
+
+    // If a filter is given, check if we have index entries that match it
+    if let Some(obj_filter) = obj_filter {
+      if let Some(index_keys) = self.state.index.get_keys(&obj_filter) {
+        keys = index_keys;
+      }
+    }
+
+    // Limit the results to the start_key...end_key range
+    keys = keys
+      .iter()
       .filter(|key| start_key.lt(key.as_str()) && end_key.gt(key.as_str()))
       .map(|k| k.to_owned())
       .collect();
+
     for key in keys {
       let mut entry = entries.entry(key.to_owned());
 
       if let Some(v) = get_or_convert_entry(env, &mut entry) {
-        // For objects, test if its properties match the filter
-        if let JsValue::Object(o) = &v {
-          if !obj_matches_filter(o, &obj_filter) {
-            continue;
-          }
-        }
-
         ret.push(v);
       }
     }
@@ -395,6 +413,7 @@ impl RsonlDB<Opened> {
   fn import_json_map(&mut self, map: Map<String, Value>) -> Result<(), Error> {
     let mut storage = self.state.storage.lock().unwrap();
     for (key, value) in map.into_iter() {
+      self.state.index.add_value_checked(&key, &value);
       storage.entries.insert(key.clone(), DBEntry::Native(value));
       storage.journal.push(JournalEntry::Set(key));
     }

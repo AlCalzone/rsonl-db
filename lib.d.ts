@@ -11,6 +11,7 @@ export interface JsonlDBOptions {
 	throttleFS?: JsonlDBOptionsThrottleFS | undefined | null;
 	autoCompress?: JsonlDBOptionsAutoCompress | undefined | null;
 	lockfileDirectory?: string | undefined | null;
+	indexPaths?: Array<string> | undefined | null;
 }
 export interface JsonlDBOptionsThrottleFS {
 	intervalMs: number;
@@ -33,7 +34,12 @@ export class JsonlDB {
 	compress(): Promise<void>;
 	isOpen(): boolean;
 	setPrimitive(key: string, value: any): void;
-	setObjectStringified(key: string, stringified: string, value: object): void;
+	setObject(
+		key: string,
+		value: object,
+		stringified: string,
+		indexKeys: Array<string>,
+	): void;
 	delete(key: string): boolean;
 	has(key: string): boolean;
 	get(key: string): unknown;

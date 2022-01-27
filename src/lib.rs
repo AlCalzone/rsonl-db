@@ -148,16 +148,18 @@ impl JsonlDB {
   }
 
   #[napi]
-  pub fn set_object_stringified(
+  pub fn set_object(
     &mut self,
     env: Env,
     key: String,
-    stringified: String,
     value: JsObject,
+    stringified: String,
+    index_keys: Vec<String>,
   ) -> Result<()> {
     let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
+
     let reference = env.create_reference(value)?;
-    db.set_reference(key, stringified, reference);
+    db.set_reference(key, reference, stringified, index_keys);
 
     Ok(())
   }

@@ -9,7 +9,6 @@
 // assert.strictEqual(testPrimitive(true), true);
 // assert.strictEqual(testObject({a: "b"}), {a: "b"});
 
-
 // import assert from 'assert'
 const assert = require("assert");
 const { JsonlDB } = require(".");
@@ -43,10 +42,11 @@ async function main() {
 			intervalMs: 60000,
 			maxBufferedCommands: 1000,
 		},
+		indexPaths: ["/type"],
 	});
-// 	// const jsdb = new JsonlDB_JS('test.txt', {
-// 	//   ignoreReadErrors: true,
-// 	// })
+	// 	// const jsdb = new JsonlDB_JS('test.txt', {
+	// 	//   ignoreReadErrors: true,
+	// 	// })
 
 	console.time("open RS");
 	await db.open();
@@ -66,62 +66,64 @@ async function main() {
 	assert.deepStrictEqual(db.get("test"), obj);
 	assert.deepStrictEqual(db.get("test"), obj);
 
-// 	db.set("foo", "bar");
-// 	db.clear();
-// 	db.set("foo", "baz");
+	assert.equal(db.getMany("", "\u9999", "/type=state").length, 1);
 
-// 	// let start = Date.now();
-// 	// let calls = 0;
+	// 	db.set("foo", "bar");
+	// 	db.clear();
+	// 	db.set("foo", "baz");
 
-// 	// while (Date.now() - start < 3000) {
-// 	// 	// for (let i = 0; i < 10; i++) {
-// 	// 	const key = `benchmark.0.test${calls}`;
-// 	// 	const value = makeObj(calls);
-// 	// 	db.set(key, value);
-// 	// 	if (Math.random() < 0.2) {
-// 	// 		db.delete(key);
-// 	// 	}
-// 	// 	calls++;
-// 	// }
+	// 	// let start = Date.now();
+	// 	// let calls = 0;
 
-// 	// console.log("calls:", calls);
-// 	// console.log(`size: `, db.size);
+	// 	// while (Date.now() - start < 3000) {
+	// 	// 	// for (let i = 0; i < 10; i++) {
+	// 	// 	const key = `benchmark.0.test${calls}`;
+	// 	// 	const value = makeObj(calls);
+	// 	// 	db.set(key, value);
+	// 	// 	if (Math.random() < 0.2) {
+	// 	// 		db.delete(key);
+	// 	// 	}
+	// 	// 	calls++;
+	// 	// }
 
-// 	// console.time("dump");
-// 	// let compressPromise1 = db.compress().then(() => console.log("compress 1"));
-// 	// let compressPromise2 = db.compress().then(() => console.log("compress 2"));
-// 	// let compressPromise3 = db.compress().then(() => console.log("compress 3"));
-// 	// // let dumpPromise = db.dump("test.dump.txt");
-// 	// //   while (Date.now() - start < 10000) {
-// 	// for (let i = 0; i < 10000; i++) {
-// 	// 	const key = `backlog${i}`;
-// 	// 	const value = makeObj(i);
-// 	// 	db.set(key, value);
-// 	// 	// calls++
-// 	// }
-// 	// await Promise.all([compressPromise1, compressPromise2, compressPromise3]);
-// 	// // await dumpPromise
-// 	// // await compressPromise1
+	// 	// console.log("calls:", calls);
+	// 	// console.log(`size: `, db.size);
 
-// 	// console.timeEnd("dump");
+	// 	// console.time("dump");
+	// 	// let compressPromise1 = db.compress().then(() => console.log("compress 1"));
+	// 	// let compressPromise2 = db.compress().then(() => console.log("compress 2"));
+	// 	// let compressPromise3 = db.compress().then(() => console.log("compress 3"));
+	// 	// // let dumpPromise = db.dump("test.dump.txt");
+	// 	// //   while (Date.now() - start < 10000) {
+	// 	// for (let i = 0; i < 10000; i++) {
+	// 	// 	const key = `backlog${i}`;
+	// 	// 	const value = makeObj(i);
+	// 	// 	db.set(key, value);
+	// 	// 	// calls++
+	// 	// }
+	// 	// await Promise.all([compressPromise1, compressPromise2, compressPromise3]);
+	// 	// // await dumpPromise
+	// 	// // await compressPromise1
 
-// 	// await db.exportJson("test.json", false);
+	// 	// console.timeEnd("dump");
 
-// 	// db.clear();
+	// 	// await db.exportJson("test.json", false);
+
+	// 	// db.clear();
 	console.time("close RS");
 	await db.close();
 	console.timeEnd("close RS");
 
-// 	process.exit(0);
+	// 	process.exit(0);
 
-// 	// console.time('open JS')
-// 	// await jsdb.open()
-// 	// console.timeEnd('open JS')
-// 	// console.log(`size: `, jsdb.size)
+	// 	// console.time('open JS')
+	// 	// await jsdb.open()
+	// 	// console.timeEnd('open JS')
+	// 	// console.log(`size: `, jsdb.size)
 
-// 	// console.time('close JS')
-// 	// await jsdb.close()
-// 	// console.timeEnd('close JS')
+	// 	// console.time('close JS')
+	// 	// await jsdb.close()
+	// 	// console.timeEnd('close JS')
 }
 
 main();

@@ -1,4 +1,3 @@
-use napi::{JsObject, JsString};
 use std::io::{Error, SeekFrom};
 use std::path::{Path, PathBuf};
 use tokio::fs::File;
@@ -46,24 +45,4 @@ pub(crate) fn replace_dirname(
   let basename = path.as_ref().parent().unwrap();
   let ret: PathBuf = [basename, dirname.as_ref(), filename].iter().collect();
   Ok(ret)
-}
-
-pub(crate) fn obj_matches_filter(o: &JsObject, filter: &Option<String>) -> bool {
-  let filter = filter.as_ref().map_or(None, |v| v.split_once('='));
-  if let Some((filter_prop, filter_val)) = filter {
-    let t = &o
-      .get_named_property::<JsString>(filter_prop)
-      .and_then(|t| t.into_utf8());
-    let t = match t {
-      Ok(t) => t.as_str(),
-      Err(_) => return false,
-    };
-    match t {
-      Ok(t) => return t == filter_val,
-      Err(_) => return false,
-    }
-  } else {
-    // no filter
-    return true;
-  }
 }

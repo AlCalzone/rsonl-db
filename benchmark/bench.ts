@@ -16,6 +16,7 @@ async function run() {
 			intervalMs: 60000,
 			maxBufferedCommands: 1000,
 		},
+		indexPaths: ["/type"],
 	});
 
 	await db.open();
@@ -56,7 +57,7 @@ async function run() {
 
 	const noAllObjects = 10000;
 	const randomize = false;
-	const percentageOther = 2;
+	const percentageOther = 98;
 	for (let i = 1; i <= noAllObjects; i++) {
 		if (randomize) {
 			if (Math.random() * 100 <= percentageOther) {
@@ -90,12 +91,12 @@ async function run() {
 
 	// let calls = 0;
 	function getObjectView(opts: { startkey: string; endkey: string }) {
-		const ret = db.getMany(opts.startkey, opts.endkey, "type=state");
+		return db.getMany(opts.startkey, opts.endkey, "/type=state");
 		// ret = ret.filter((x: any) => x.type === "state");
-		assert.strictEqual(
-			ret.length,
-			(noAllObjects * (100 - percentageOther)) / 100,
-		);
+		// assert.strictEqual(
+		// 	ret.length,
+		// 	(noAllObjects * (100 - percentageOther)) / 100,
+		// );
 		// for (const key of db.keys()) {
 		// 	if (key < opts.startkey || key > opts.endkey) continue;
 		// 	db.get(key, "/type=state");
@@ -105,14 +106,40 @@ async function run() {
 		// }
 	}
 
-	// const calls = getObjectView({
-	// 	startkey: "benchmark.0.test",
-	// 	endkey: "benchmark.0.test\u9999",
-	// }).length;
+	console.time("kalt");
+	let calls = getObjectView({
+		startkey: "benchmark.0.test",
+		endkey: "benchmark.0.test\u9999",
+	}).length;
+	console.timeEnd("kalt");
 
-	// console.log("calls", calls);
+	console.log("calls", calls);
 
-	// process.exit(0);
+	console.time("warm");
+	calls = getObjectView({
+		startkey: "benchmark.0.test",
+		endkey: "benchmark.0.test\u9999",
+	}).length;
+	console.timeEnd("warm");
+
+	console.time("warm");
+	calls = getObjectView({
+		startkey: "benchmark.0.test",
+		endkey: "benchmark.0.test\u9999",
+	}).length;
+	console.timeEnd("warm");
+
+	console.time("warm");
+	calls = getObjectView({
+		startkey: "benchmark.0.test",
+		endkey: "benchmark.0.test\u9999",
+	}).length;
+	console.timeEnd("warm");
+
+	db.clear();
+	await db.close();
+
+	process.exit(0);
 
 	await b.suite(
 		"rsonl-db",

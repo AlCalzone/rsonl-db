@@ -1,6 +1,7 @@
 import { JsonlDBOptions } from "./lib";
 export declare class JsonlDB<V> implements Map<string, V> {
     private readonly db;
+    private readonly options;
     constructor(filename: string, options?: JsonlDBOptions);
     private validateOptions;
     open(): Promise<void>;
@@ -16,6 +17,9 @@ export declare class JsonlDB<V> implements Map<string, V> {
     getMany(startkey: string, endkey: string, objectFilter?: string): V[];
     has(key: string): boolean;
     get size(): number;
+    private _keysCache;
+    private getKeysCached;
+    private deriveIndexKeys;
     keys(): IterableIterator<string>;
     entries(): IterableIterator<[string, V]>;
     values(): IterableIterator<V>;

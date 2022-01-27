@@ -1,3 +1,4 @@
+use std::collections::{HashMap, HashSet};
 use std::io::Error;
 use std::sync::{Arc, Mutex};
 
@@ -94,6 +95,84 @@ pub(crate) async fn parse_entries(
 }
 
 pub(crate) type Journal = Vec<JournalEntry>;
+
+pub(crate) struct Index {
+  paths: Vec<String>,
+  // (Map: "path=value" => (object keys[]))
+  map: HashMap<String, HashSet<String>>,
+}
+
+impl Index {
+  pub fn new(paths: Vec<String>) -> Self {
+    Self {
+      map: HashMap::new(),
+      paths,
+    }
+  }
+
+  pub fn add_entries_checked(&mut self, entries: &IndexMap<String, DBEntry>) {
+    let paths = { self.paths.clone() };
+    for (key, val) in entries {
+      for path in &paths {
+        if let DBEntry::Native(val) = val {
+          // ... create a new index entry
+          if let Some(index_val) = val.pointer(path).map_or(None, |v| v.as_str()) {
+            let index_key = format!("{}={}", path, &index_val);
+            self.add_one(&index_key, &key);
+          }
+        }
+      }
+    }
+  }
+
+  pub fn add_value_checked(&mut self, key: &str, val: &serde_json::Value) {
+    let paths = { self.paths.clone() };
+    for path in paths {
+      if let Some(index_val) = val.pointer(&path).map_or(None, |v| v.as_str()) {
+        let index_key = format!("{}={}", &path, &index_val);
+        self.add_one(&index_key, &key);
+      }
+    }
+  }
+
+  pub fn add_one(&mut self, index_key: &str, key: &str) {
+    let value_set = self
+      .map
+      .entry(index_key.to_owned())
+      .or_insert_with(|| HashSet::new());
+    value_set.insert(key.to_owned());
+  }
+
+  pub fn add_many(&mut self, key: &str, index_keys: Vec<String>) {
+    for index_key in index_keys {
+      self.add_one(&index_key, &key);
+    }
+  }
+
+  // pub fn len(&self) -> usize {
+  //   self.map.len()
+  // }
+
+  pub fn clear(&mut self) {
+    self.map.clear();
+  }
+
+  pub fn remove(&mut self, key: &str) {
+    for keys in self.map.values_mut() {
+      keys.remove(key);
+    }
+  }
+
+  pub fn get_keys(&self, index_key: &str) -> Option<Vec<String>> {
+    match self.map.get(index_key) {
+      Some(keys) => {
+        let keys = keys.iter().cloned().collect();
+        Some(keys)
+      }
+      None => None,
+    }
+  }
+}
 
 pub(crate) struct Storage {
   pub entries: IndexMap<String, DBEntry>,
