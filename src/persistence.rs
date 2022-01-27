@@ -248,28 +248,30 @@ async fn dump(
 
   let mut writer = BufWriter::new(dump_file);
 
-  // Create a copy of the internal map so we only need to hold on to it very shortly
+  // Render the compressed file in memory so we only need to lock the storage very shortly
   // Also, remember how many entries were in the journal. These are already part of
   // the map, so we don't need to append them later
   // and keep a consistent state
-  let (data, journal_len) = {
+  let (dump, journal_len) = {
     let storage = storage.lock().unwrap();
-    let entries = &storage.entries;
     let journal = &storage.journal;
-    (entries.clone(), journal.len())
+
+    let dump: Vec<u8> = storage
+      .entries
+      .iter()
+      .flat_map(|(key, val)| [format_line(key, val).as_bytes(), b"\n"].concat())
+      .collect();
+    (dump, journal.len())
   };
 
   // Print all items
-  for (key, val) in data {
-    writer.write(format_line(&key, val.to_string()).as_bytes()).await?;
-    writer.write(b"\n").await?;
-  }
+  writer.write_all(dump.as_slice()).await?;
 
   // And append any new entries in the journal
   let journal = if drain_journal {
     storage.drain_journal()
   } else {
-    storage.lock().unwrap().journal.clone()
+    storage.clone_journal()
   };
   for str in journal.iter().skip(journal_len) {
     if str == "" {

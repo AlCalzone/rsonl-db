@@ -1,7 +1,8 @@
 #![deny(clippy::all)]
 
 use db_options::DBOptions;
-use napi::bindgen_prelude::*;
+use js_values::JsValue;
+use napi::{bindgen_prelude::*, JsObject};
 use napi_derive::napi;
 
 #[macro_use]
@@ -19,6 +20,7 @@ static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
 mod bg_thread;
 mod db;
 mod db_options;
+mod js_values;
 mod jsonldb_options;
 mod lockfile;
 mod persistence;
@@ -27,11 +29,12 @@ mod util;
 
 #[macro_use]
 mod error;
-use db::{Closed, Opened, RsonlDB};
+use db::{Closed, HalfClosed, Opened, RsonlDB};
 use jsonldb_options::JsonlDBOptions;
 
 enum DB {
   Closed(RsonlDB<Closed>),
+  HalfClosed(RsonlDB<HalfClosed>),
   Opened(RsonlDB<Opened>),
 }
 
@@ -53,6 +56,13 @@ impl DB {
   fn as_closed_mut(&mut self) -> Option<&mut RsonlDB<Closed>> {
     match self {
       DB::Closed(x) => Some(x),
+      _ => None,
+    }
+  }
+
+  fn as_half_closed_mut(&mut self) -> Option<&mut RsonlDB<HalfClosed>> {
+    match self {
+      DB::HalfClosed(x) => Some(x),
       _ => None,
     }
   }
@@ -84,9 +94,21 @@ impl JsonlDB {
   }
 
   #[napi]
-  pub async fn close(&mut self) -> Result<()> {
+  pub async fn half_close(&mut self) -> Result<()> {
     let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
     let db = db.close().await?;
+    self.r = DB::HalfClosed(db);
+
+    Ok(())
+  }
+
+  #[napi]
+  pub fn close(&mut self, env: Env) -> Result<()> {
+    let db = self
+      .r
+      .as_half_closed_mut()
+      .ok_or(jserr!("DB is not in half-closed state"))?;
+    let db = db.close(env)?;
     self.r = DB::Closed(db);
 
     Ok(())
@@ -114,17 +136,28 @@ impl JsonlDB {
   }
 
   #[napi]
-  pub fn set(&mut self, key: String, value: serde_json::Value) -> Result<()> {
+  pub fn set_primitive(&mut self, key: String, value: serde_json::Value) -> Result<()> {
+    if !(value.is_null() || value.is_number() || value.is_string() || value.is_boolean()) {
+      return Err(jserr!("The value {:?} is not a primitive!", value));
+    }
+
     let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
-    db.set(key, value);
+    db.set_native(key, value);
 
     Ok(())
   }
 
   #[napi]
-  pub fn set_stringified(&mut self, key: String, value: String) -> Result<()> {
+  pub fn set_object_stringified(
+    &mut self,
+    env: Env,
+    key: String,
+    stringified: String,
+    value: JsObject,
+  ) -> Result<()> {
     let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
-    db.set_stringified(key, value);
+    let reference = env.create_reference(value)?;
+    db.set_reference(key, stringified, reference);
 
     Ok(())
   }
@@ -141,32 +174,22 @@ impl JsonlDB {
     Ok(db.has(&key))
   }
 
-  #[napi]
-  pub fn get(&mut self, key: String) -> Result<Option<serde_json::Value>> {
+  #[napi(ts_return_type = "unknown")]
+  pub fn get(&mut self, env: Env, key: String) -> Result<Option<JsValue>> {
     let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
-    Ok(db.get(&key))
+    Ok(db.get(env, &key))
   }
 
-  #[napi]
-  pub fn get_fast(
-    &mut self,
-    key: String,
-    obj_filter: Option<String>,
-  ) -> Result<Option<serde_json::Value>> {
-    let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
-    Ok(db.get_fast(&key, obj_filter))
-  }
-
-  #[napi]
+  #[napi(ts_return_type = "unknown[]")]
   pub fn get_many(
     &mut self,
+    env: Env,
     start_key: String,
     end_key: String,
     obj_filter: Option<String>,
-  ) -> Result<String> {
+  ) -> Result<Vec<JsValue>> {
     let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
-    let ret = serde_json::to_string(&db.get_many(&start_key, &end_key, obj_filter))?;
-    Ok(ret)
+    Ok(db.get_many(env, &start_key, &end_key, obj_filter))
   }
 
   #[napi]
@@ -182,21 +205,21 @@ impl JsonlDB {
     Ok(db.size() as u32)
   }
 
-  #[napi(ts_args_type = "callback: (value: any, key: string) => void")]
-  pub fn for_each<T: Fn(serde_json::Value, String) -> Result<()>>(
-    &mut self,
-    callback: T,
-  ) -> Result<()> {
-    let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
+  // #[napi(ts_args_type = "callback: (value: any, key: string) => void")]
+  // pub fn for_each<T: Fn(serde_json::Value, String) -> Result<()>>(
+  //   &mut self,
+  //   callback: T,
+  // ) -> Result<()> {
+  //   let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
 
-    for k in db.all_keys() {
-      let v = db.get(&k);
-      if let Some(v) = v {
-        callback(v.clone().into(), k.clone()).unwrap();
-      }
-    }
-    Ok(())
-  }
+  //   for k in db.all_keys() {
+  //     let v = db.get(&k);
+  //     if let Some(v) = v {
+  //       callback(v.clone().into(), k.clone()).unwrap();
+  //     }
+  //   }
+  //   Ok(())
+  // }
 
   #[napi]
   pub fn get_keys(&mut self) -> Result<Vec<String>> {

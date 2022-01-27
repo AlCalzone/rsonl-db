@@ -1,3 +1,4 @@
+use napi::{JsObject, JsString};
 use std::io::{Error, SeekFrom};
 use std::path::{Path, PathBuf};
 use tokio::fs::File;
@@ -47,25 +48,22 @@ pub(crate) fn replace_dirname(
   Ok(ret)
 }
 
-pub(crate) fn fmt_transport(value: serde_json::Value) -> serde_json::Value {
-  match value {
-    serde_json::Value::Array(_) => {
-      let mut str = serde_json::to_string(&value).unwrap();
-      // Indicate that this string is a serialized object/array
-      str.insert(0, '\x01');
-      serde_json::Value::from(str)
+pub(crate) fn obj_matches_filter(o: &JsObject, filter: &Option<String>) -> bool {
+  let filter = filter.as_ref().map_or(None, |v| v.split_once('='));
+  if let Some((filter_prop, filter_val)) = filter {
+    let t = &o
+      .get_named_property::<JsString>(filter_prop)
+      .and_then(|t| t.into_utf8());
+    let t = match t {
+      Ok(t) => t.as_str(),
+      Err(_) => return false,
+    };
+    match t {
+      Ok(t) => return t == filter_val,
+      Err(_) => return false,
     }
-    serde_json::Value::Object(_) => {
-      let mut str = serde_json::to_string(&value).unwrap();
-      // Indicate that this string is a serialized object/array
-      str.insert(0, '\x01');
-      serde_json::Value::from(str)
-    }
-
-    serde_json::Value::String(str) => {
-      let str = format!("\0{}", &str);
-      serde_json::Value::from(str)
-    }
-    o => o,
+  } else {
+    // no filter
+    return true;
   }
 }

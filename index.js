@@ -6,43 +6,40 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.JsonlDB = void 0;
 const lib_1 = require("./lib");
 const path_1 = __importDefault(require("path"));
-/**
- * Tests whether the given variable is a real object and not an Array
- * @param it The variable to test
- */
-function isObject(it) {
-    // This is necessary because:
-    // typeof null === 'object'
-    // typeof [] === 'object'
-    // [] instanceof Object === true
-    return Object.prototype.toString.call(it) === "[object Object]";
-}
-/**
- * Tests whether the given variable is really an Array
- * @param it The variable to test
- */
-function isArray(it) {
-    if (Array.isArray != null)
-        return Array.isArray(it);
-    return Object.prototype.toString.call(it) === "[object Array]";
-}
-/** Checks whether a value should be stringified before passing to Rust */
-function needsStringify(value) {
-    if (!value || typeof value !== "object")
-        return false;
-    if (isObject(value)) {
-        // Empirically, empty objects can be handled faster without stringifying
-        for (const _key in value)
-            return true;
-        return false;
-    }
-    else if (isArray(value)) {
-        // Empirically, arrays with length < 3 are faster without stringifying
-        // Check for nested objects though
-        return value.length < 3 && !value.some((v) => needsStringify(v));
-    }
-    return false;
-}
+// /**
+//  * Tests whether the given variable is a real object and not an Array
+//  * @param it The variable to test
+//  */
+// function isObject<T = unknown>(it: T): it is T & Record<string, unknown> {
+// 	// This is necessary because:
+// 	// typeof null === 'object'
+// 	// typeof [] === 'object'
+// 	// [] instanceof Object === true
+// 	return Object.prototype.toString.call(it) === "[object Object]";
+// }
+// /**
+//  * Tests whether the given variable is really an Array
+//  * @param it The variable to test
+//  */
+// function isArray<T = unknown>(it: T): it is T & unknown[] {
+// 	if (Array.isArray != null) return Array.isArray(it);
+// 	return Object.prototype.toString.call(it) === "[object Array]";
+// }
+// /** Checks whether a value should be stringified before passing to Rust */
+// function needsStringify(value: unknown): boolean {
+// 	if (!value || typeof value !== "object") return false;
+// 	if (isObject(value)) {
+// 		// Empirically, empty objects can be handled faster without stringifying
+// 		for (const _key in value) return true;
+// 		return false;
+// 	} else if (isArray(value)) {
+// 		// Empirically, arrays with length < 3 are faster without stringifying
+// 		// Check for nested objects though
+// 		return value.length < 3 && !value.some((v) => needsStringify(v));
+// 	}
+// 	return false;
+// }
+// @ts-expect-error
 class JsonlDB {
     constructor(filename, options = {}) {
         this.validateOptions(options);
@@ -79,11 +76,11 @@ class JsonlDB {
         }
     }
     open() {
-        this._keysCache = undefined;
         return this.db.open();
     }
-    close() {
-        return this.db.close();
+    async close() {
+        await this.db.halfClose();
+        this.db.close();
     }
     get isOpen() {
         return this.db.isOpen();
@@ -100,48 +97,36 @@ class JsonlDB {
         this._compressPromise = undefined;
     }
     clear() {
-        var _a;
-        (_a = this._keysCache) === null || _a === void 0 ? void 0 : _a.clear();
         this.db.clear();
     }
     delete(key) {
-        var _a;
-        (_a = this._keysCache) === null || _a === void 0 ? void 0 : _a.delete(key);
         return this.db.delete(key);
     }
-    // The set method is more performant for some values when we stringify them in JS code
     set(key, value) {
-        var _a;
-        (_a = this._keysCache) === null || _a === void 0 ? void 0 : _a.add(key);
-        if (needsStringify(value)) {
-            this.db.setStringified(key, JSON.stringify(value));
-        }
-        else {
-            this.db.set(key, value);
+        switch (typeof value) {
+            case "number":
+            case "boolean":
+            case "string":
+                this.db.setPrimitive(key, value);
+                break;
+            case "object":
+                if (value === null) {
+                    this.db.setPrimitive(key, value);
+                }
+                else {
+                    this.db.setObjectStringified(key, JSON.stringify(value), value);
+                }
+                break;
+            default:
+                throw new Error("unsupported value type");
         }
         return this;
     }
-    get(key, objectFilter) {
-        // return this.db.get(key);
-        const ret = this.db.getFast(key, objectFilter);
-        if (typeof ret === "string") {
-            if (ret.startsWith("\x00")) {
-                return ret.slice(1);
-            }
-            else if (ret.startsWith("\x01")) {
-                return JSON.parse(ret.slice(1));
-            }
-            else {
-                throw new Error("Unexpected response to getFast!");
-            }
-        }
-        else {
-            return ret;
-        }
+    get(key) {
+        return this.db.get(key);
     }
     getMany(startkey, endkey, objectFilter) {
-        // return this.db.get(key);
-        return JSON.parse(this.db.getMany(startkey, endkey, objectFilter));
+        return this.db.getMany(startkey, endkey, objectFilter);
     }
     has(key) {
         return this.db.has(key);
@@ -149,28 +134,26 @@ class JsonlDB {
     get size() {
         return this.db.size;
     }
-    forEach(callback, thisArg) {
-        this.db.forEach((v, k) => {
-            callback.call(thisArg, v, k, this);
-        });
-    }
-    getKeysCached() {
-        if (!this._keysCache) {
-            this._keysCache = new Set(JSON.parse(this.db.getKeysStringified()));
-        }
-        return this._keysCache;
-    }
+    // public forEach(
+    // 	callback: (value: V, key: string, map: Map<string, V>) => void,
+    // 	thisArg?: any,
+    // ): void {
+    // 	this.db.forEach((v, k) => {
+    // 		callback.call(thisArg, v, k, this);
+    // 	});
+    // }
     keys() {
         const that = this;
         return (function* () {
-            for (const k of that.getKeysCached())
+            const allKeys = that.db.getKeys();
+            for (const k of allKeys)
                 yield k;
         })();
     }
     entries() {
         const that = this;
         return (function* () {
-            for (const k of that.getKeysCached()) {
+            for (const k of that.keys()) {
                 yield [k, that.get(k)];
             }
         })();
@@ -178,7 +161,7 @@ class JsonlDB {
     values() {
         const that = this;
         return (function* () {
-            for (const k of that.getKeysCached()) {
+            for (const k of that.keys()) {
                 yield that.get(k);
             }
         })();
@@ -193,7 +176,6 @@ class JsonlDB {
         await this.db.exportJson(filename, pretty);
     }
     importJson(jsonOrFile) {
-        this._keysCache = undefined;
         if (typeof jsonOrFile === "string") {
             return this.db.importJsonFile(jsonOrFile);
         }

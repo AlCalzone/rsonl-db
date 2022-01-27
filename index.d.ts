@@ -12,13 +12,10 @@ export declare class JsonlDB<V> implements Map<string, V> {
     clear(): void;
     delete(key: string): boolean;
     set(key: string, value: V): this;
-    get(key: string, objectFilter?: string): V | undefined;
+    get(key: string): V | undefined;
     getMany(startkey: string, endkey: string, objectFilter?: string): V[];
     has(key: string): boolean;
     get size(): number;
-    forEach(callback: (value: V, key: string, map: Map<string, V>) => void, thisArg?: any): void;
-    private _keysCache;
-    private getKeysCached;
     keys(): IterableIterator<string>;
     entries(): IterableIterator<[string, V]>;
     values(): IterableIterator<V>;

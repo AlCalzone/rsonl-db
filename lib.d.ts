@@ -11,7 +11,6 @@ export interface JsonlDBOptions {
 	throttleFS?: JsonlDBOptionsThrottleFS | undefined | null;
 	autoCompress?: JsonlDBOptionsAutoCompress | undefined | null;
 	lockfileDirectory?: string | undefined | null;
-	indexPaths?: Array<string> | undefined | null;
 }
 export interface JsonlDBOptionsThrottleFS {
 	intervalMs: number;
@@ -28,27 +27,23 @@ export interface JsonlDBOptionsAutoCompress {
 export class JsonlDB {
 	constructor(filename: string, options?: JsonlDBOptions | undefined | null);
 	open(): Promise<void>;
-	close(): Promise<void>;
+	halfClose(): Promise<void>;
+	close(): void;
 	dump(filename: string): Promise<void>;
 	compress(): Promise<void>;
 	isOpen(): boolean;
-	set(key: string, value: any): void;
-	setStringified(key: string, value: string): void;
+	setPrimitive(key: string, value: any): void;
+	setObjectStringified(key: string, stringified: string, value: object): void;
 	delete(key: string): boolean;
 	has(key: string): boolean;
-	get(key: string): any | undefined | null;
-	getFast(
-		key: string,
-		objFilter?: string | undefined | null,
-	): any | undefined | null;
+	get(key: string): unknown;
 	getMany(
 		startKey: string,
 		endKey: string,
 		objFilter?: string | undefined | null,
-	): string;
+	): unknown[];
 	clear(): void;
 	get size(): number;
-	forEach(callback: (value: any, key: string) => void): void;
 	getKeys(): Array<string>;
 	getKeysStringified(): string;
 	exportJson(filename: string, pretty: boolean): Promise<void>;

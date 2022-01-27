@@ -2,6 +2,8 @@ use std::io::Error;
 use std::path::Path;
 use std::sync::Arc;
 
+use indexmap::map::Entry;
+use napi::{JsObject, Ref};
 use serde_json::{Map, Value};
 use tokio::fs::{self, OpenOptions};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -9,10 +11,12 @@ use tokio::sync::{mpsc, Notify};
 
 use crate::bg_thread::{Command, ThreadHandle};
 use crate::db_options::DBOptions;
+use crate::js_values::{map_to_object, vec_to_array, JsValue};
 use crate::lockfile::Lockfile;
 use crate::persistence::persistence_thread;
-use crate::storage::{format_line, parse_entries, Entry, SharedStorage, Storage};
-use crate::util::{replace_dirname, safe_parent, fmt_transport};
+use crate::storage::DBEntry;
+use crate::storage::{parse_entries, JournalEntry, SharedStorage, Storage};
+use crate::util::{obj_matches_filter, replace_dirname, safe_parent};
 
 pub(crate) struct RsonlDB<S: DBState> {
   pub filename: String,
@@ -22,6 +26,10 @@ pub(crate) struct RsonlDB<S: DBState> {
 
 // Data that's only present in certain DB states
 pub(crate) struct Closed;
+
+pub(crate) struct HalfClosed {
+  storage: SharedStorage,
+}
 
 pub(crate) struct Opened {
   storage: SharedStorage,
@@ -41,6 +49,11 @@ impl DBState for Closed {
 impl DBState for Opened {
   fn is_open(&self) -> bool {
     true
+  }
+}
+impl DBState for HalfClosed {
+  fn is_open(&self) -> bool {
+    false
   }
 }
 
@@ -135,8 +148,7 @@ impl RsonlDB<Closed> {
 
     // Read the entire file. This also puts the cursor at the end, so we can start writing
     let entries = parse_entries(&mut file, self.options.ignore_read_errors).await?;
-
-    let journal = Vec::<String>::new();
+    let journal = Vec::<JournalEntry>::new();
     let storage = SharedStorage::new(Storage { entries, journal });
 
     let filename = self.filename.clone();
@@ -157,6 +169,7 @@ impl RsonlDB<Closed> {
       options: self.options.clone(),
       state: Opened {
         storage,
+        // js_storage: IndexMap::new(),
         persistence_thread: ThreadHandle {
           thread: Box::new(thread),
           tx,
@@ -167,8 +180,31 @@ impl RsonlDB<Closed> {
   }
 }
 
+impl RsonlDB<HalfClosed> {
+  pub fn close(&mut self, env: napi::Env) -> Result<RsonlDB<Closed>, Error> {
+    {
+      // Unref all native objects
+      let mut storage = self.state.storage.lock().unwrap();
+      for entry in storage.entries.iter_mut() {
+        if let DBEntry::Reference(_, r) = entry.1 {
+          r.unref(env).ok();
+        }
+      }
+    }
+
+    // Free memory
+    drop(&self.state);
+
+    Ok(RsonlDB {
+      options: self.options.clone(),
+      filename: self.filename.to_owned(),
+      state: Closed,
+    })
+  }
+}
+
 impl RsonlDB<Opened> {
-  pub async fn close(&mut self) -> Result<RsonlDB<Closed>, Error> {
+  pub async fn close(&mut self) -> Result<RsonlDB<HalfClosed>, Error> {
     // Compress if that is desired
     if self.options.auto_compress.on_close {
       self.compress().await?;
@@ -177,33 +213,26 @@ impl RsonlDB<Opened> {
     // End the all threads and wait for them to end
     self.state.persistence_thread.stop_and_join().await?;
 
-    // Free memory
-    drop(&self.state);
-
-    // Change DB state to closed
+    // Change DB state to half-closed
+    // Freeing memory has to happen on the Node.js thread
     Ok(RsonlDB {
       options: self.options.clone(),
       filename: self.filename.to_owned(),
-      state: Closed,
+      state: HalfClosed {
+        storage: self.state.storage.to_owned(),
+      },
     })
   }
 
-  pub fn set(&mut self, key: String, value: serde_json::Value) {
-    let stringified = serde_json::to_string(&Entry::Value {
-      k: key.to_owned(),
-      v: value.clone(),
-    })
-    .unwrap();
-
-    self.state.storage.insert(key, value, stringified);
+  pub fn set_native(&mut self, key: String, value: serde_json::Value) {
+    self.state.storage.insert(key, DBEntry::Native(value));
   }
 
-  pub fn set_stringified(&mut self, key: String, value: String) {
-    let stringified = format_line(&key, &value);
-
-    let parsed: serde_json::Value = serde_json::from_str(&value).unwrap();
-
-    self.state.storage.insert(key, parsed, stringified);
+  pub fn set_reference(&mut self, key: String, stringified: String, obj: Ref<()>) {
+    self
+      .state
+      .storage
+      .insert(key, DBEntry::Reference(stringified, obj));
   }
 
   pub fn delete(&mut self, key: String) -> bool {
@@ -223,65 +252,40 @@ impl RsonlDB<Opened> {
     self.state.storage.lock().unwrap().entries.contains_key(key)
   }
 
-  pub fn get(&mut self, key: &String) -> Option<serde_json::Value> {
-    let entries = &self.state.storage.lock().unwrap().entries;
-    entries.get(key).and_then(|f| Some(f.clone()))
-  }
+  pub fn get(&mut self, env: napi::Env, key: &str) -> Option<JsValue> {
+    let entries = &mut self.state.storage.lock().unwrap().entries;
+    let mut entry = entries.entry(key.to_owned());
 
-  pub fn get_fast(
-    &mut self,
-    key: &String,
-    obj_filter: Option<String>,
-  ) -> Option<serde_json::Value> {
-    if let Some(value) = self.get(key) {
-      // If a filter is given, check if the value matches the filter
-      if let Some(obj_filter) = obj_filter {
-        // Test if the value matches the filter
-        if let Some((filter_path, filter_val)) = obj_filter.split_once('=') {
-          match value.pointer(filter_path).map_or(None, |v| v.as_str()) {
-            Some(v) if v == filter_val => {
-              // Matches, return the value
-            }
-            // No match
-            _ => return None,
-          }
-        } else {
-          // no valid filter expression
-        }
-      }
-
-      // No filter, just return the value
-      Some(fmt_transport(value))
-    } else {
-      None
-    }
+    get_or_convert_entry(env, &mut entry)
   }
 
   pub fn get_many(
     &mut self,
+    env: napi::Env,
     start_key: &str,
     end_key: &str,
     obj_filter: Option<String>,
-  ) -> Vec<serde_json::Value> {
+  ) -> Vec<JsValue> {
     let mut ret = Vec::new();
-    let obj_filter = obj_filter.as_ref().map_or(None, |v| v.split_once('='));
 
-    let entries = &self.state.storage.lock().unwrap().entries;
-    for (key, value) in entries {
-      if start_key.gt(key.as_str()) || end_key.lt(key.as_str()) {
-        continue;
-      }
+    let entries = &mut self.state.storage.lock().unwrap().entries;
+    let keys: Vec<String> = entries
+      .keys()
+      .filter(|key| start_key.lt(key.as_str()) && end_key.gt(key.as_str()))
+      .map(|k| k.to_owned())
+      .collect();
+    for key in keys {
+      let mut entry = entries.entry(key.to_owned());
 
-      // Test if the value matches the filter
-      if let Some((filter_path, filter_val)) = obj_filter {
-        match value.pointer(filter_path).map_or(None, |v| v.as_str()) {
-          Some(v) if v == filter_val => {
-            // Matches, return the value
-            ret.push(value.clone());
+      if let Some(v) = get_or_convert_entry(env, &mut entry) {
+        // For objects, test if its properties match the filter
+        if let JsValue::Object(o) = &v {
+          if !obj_matches_filter(o, &obj_filter) {
+            continue;
           }
-          // No match
-          _ => continue,
         }
+
+        ret.push(v);
       }
     }
     ret
@@ -344,8 +348,6 @@ impl RsonlDB<Opened> {
   }
 
   pub async fn export_json(&mut self, filename: &str, pretty: bool) -> Result<(), Error> {
-    let entries = { self.state.storage.lock().unwrap().entries.clone() };
-
     let mut file = OpenOptions::new()
       .create(true)
       .truncate(true)
@@ -353,12 +355,17 @@ impl RsonlDB<Opened> {
       .open(filename)
       .await?;
 
-    let map =
-      Map::<String, Value>::from_iter(entries.iter().map(|(k, v)| (k.to_owned(), v.to_owned())));
-    let json = if pretty {
-      serde_json::to_string_pretty(&map)?
-    } else {
-      serde_json::to_string(&map)?
+    let json: String = {
+      let entries = &self.state.storage.lock().unwrap().entries;
+
+      let map = Map::<String, Value>::from_iter(
+        entries.iter().map(|(k, v)| (k.to_owned(), Value::from(v))),
+      );
+      if pretty {
+        serde_json::to_string_pretty(&map)?
+      } else {
+        serde_json::to_string(&map)?
+      }
     };
 
     file.write_all(json.as_bytes()).await?;
@@ -388,16 +395,46 @@ impl RsonlDB<Opened> {
   fn import_json_map(&mut self, map: Map<String, Value>) -> Result<(), Error> {
     let mut storage = self.state.storage.lock().unwrap();
     for (key, value) in map.into_iter() {
-      let stringified = serde_json::to_string(&Entry::Value {
-        k: key.clone(),
-        v: value.clone(),
-      })
-      .unwrap();
-
-      storage.entries.insert(key, value);
-      storage.journal.push(stringified);
+      storage.entries.insert(key.clone(), DBEntry::Native(value));
+      storage.journal.push(JournalEntry::Set(key));
     }
 
     Ok(())
+  }
+}
+
+fn get_or_convert_entry(env: napi::Env, entry: &mut Entry<String, DBEntry>) -> Option<JsValue> {
+  match entry {
+    Entry::Occupied(e) => match e.get_mut() {
+      DBEntry::Reference(_, r) => {
+        let obj: JsObject = env.get_reference_value(r).unwrap();
+        Some(JsValue::Object(obj))
+      }
+
+      DBEntry::Native(val) if val.is_array() => {
+        let vec = val.as_array().unwrap().to_owned();
+        let stringified = serde_json::to_string(&vec).unwrap();
+
+        let arr = vec_to_array(env, vec).unwrap();
+        let reference = env.create_reference(&arr).unwrap();
+        e.insert(DBEntry::Reference(stringified, reference));
+
+        Some(JsValue::Object(arr))
+      }
+
+      DBEntry::Native(val) if val.is_object() => {
+        let map = val.as_object().unwrap().to_owned();
+        let stringified = serde_json::to_string(&map).unwrap();
+
+        let obj = map_to_object(env, map).unwrap();
+        let reference = env.create_reference(&obj).unwrap();
+        e.insert(DBEntry::Reference(stringified, reference));
+
+        Some(JsValue::Object(obj))
+      }
+
+      DBEntry::Native(val) => Some(JsValue::Primitive(val.clone())),
+    },
+    Entry::Vacant(_) => None,
   }
 }
