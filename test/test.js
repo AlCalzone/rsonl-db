@@ -11,7 +11,7 @@
 
 // import assert from 'assert'
 const assert = require("assert");
-const { JsonlDB } = require(".");
+const { JsonlDB } = require("..");
 // const { isArray, isObject } = require("alcalzone-shared/typeguards");
 // const { wait } = require("alcalzone-shared/async");
 // // import assert from 'assert'
@@ -60,54 +60,55 @@ async function main() {
 
 	console.log("closing");
 	await db.close();
+	console.time("open again");
 	await db.open();
-	console.log("open again");
+	console.timeEnd("open again");
 
 	assert.deepStrictEqual(db.get("test"), obj);
 	assert.deepStrictEqual(db.get("test"), obj);
 
-	assert.equal(db.getMany("", "\u9999", "/type=state").length, 1);
+	// assert.equal(db.getMany("", "\u9999", "/type=state").length, 1);
 
 	// 	db.set("foo", "bar");
-	// 	db.clear();
+	db.clear();
 	// 	db.set("foo", "baz");
 
-	// 	// let start = Date.now();
-	// 	// let calls = 0;
+	let start = Date.now();
+	let calls = 0;
 
-	// 	// while (Date.now() - start < 3000) {
-	// 	// 	// for (let i = 0; i < 10; i++) {
-	// 	// 	const key = `benchmark.0.test${calls}`;
-	// 	// 	const value = makeObj(calls);
-	// 	// 	db.set(key, value);
-	// 	// 	if (Math.random() < 0.2) {
-	// 	// 		db.delete(key);
-	// 	// 	}
-	// 	// 	calls++;
-	// 	// }
+	while (Date.now() - start < 3000) {
+		// for (let i = 0; i < 10; i++) {
+		const key = `benchmark.0.test${calls}`;
+		const value = makeObj(calls);
+		db.set(key, value);
+		if (Math.random() < 0.2) {
+			db.delete(key);
+		}
+		calls++;
+	}
 
-	// 	// console.log("calls:", calls);
-	// 	// console.log(`size: `, db.size);
+	console.log("calls:", calls);
+	console.log(`size: `, db.size);
 
-	// 	// console.time("dump");
-	// 	// let compressPromise1 = db.compress().then(() => console.log("compress 1"));
-	// 	// let compressPromise2 = db.compress().then(() => console.log("compress 2"));
-	// 	// let compressPromise3 = db.compress().then(() => console.log("compress 3"));
-	// 	// // let dumpPromise = db.dump("test.dump.txt");
-	// 	// //   while (Date.now() - start < 10000) {
-	// 	// for (let i = 0; i < 10000; i++) {
-	// 	// 	const key = `backlog${i}`;
-	// 	// 	const value = makeObj(i);
-	// 	// 	db.set(key, value);
-	// 	// 	// calls++
-	// 	// }
-	// 	// await Promise.all([compressPromise1, compressPromise2, compressPromise3]);
-	// 	// // await dumpPromise
-	// 	// // await compressPromise1
+	console.time("dump");
+	let compressPromise1 = db.compress().then(() => console.log("compress 1"));
+	let compressPromise2 = db.compress().then(() => console.log("compress 2"));
+	let compressPromise3 = db.compress().then(() => console.log("compress 3"));
+	// let dumpPromise = db.dump("test.dump.txt");
+	//   while (Date.now() - start < 10000) {
+	for (let i = 0; i < 10000; i++) {
+		const key = `backlog${i}`;
+		const value = makeObj(i);
+		db.set(key, value);
+		// calls++
+	}
+	await Promise.all([compressPromise1, compressPromise2, compressPromise3]);
+	// await dumpPromise
+	// await compressPromise1
 
-	// 	// console.timeEnd("dump");
+	console.timeEnd("dump");
 
-	// 	// await db.exportJson("test.json", false);
+	await db.exportJson("test.json", false);
 
 	// 	// db.clear();
 	console.time("close RS");

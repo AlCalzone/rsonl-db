@@ -1,5 +1,5 @@
 // /* eslint-disable @typescript-eslint/prefer-for-of */
-import assert from "assert";
+// import assert from "assert";
 import b from "benny";
 
 // import { serializeTest } from '../index'
@@ -74,8 +74,8 @@ async function run() {
 		}
 	}
 
-	await db.close();
-	await db.open();
+	// await db.close();
+	// await db.open();
 
 	// assert.deepStrictEqual(db.get("benchmark.0.test.1"), {
 	// 	type: "state",
@@ -89,71 +89,71 @@ async function run() {
 	// 	native: {},
 	// });
 
-	// let calls = 0;
-	function getObjectView(opts: { startkey: string; endkey: string }) {
-		return db.getMany(opts.startkey, opts.endkey, "/type=state");
-		// ret = ret.filter((x: any) => x.type === "state");
-		// assert.strictEqual(
-		// 	ret.length,
-		// 	(noAllObjects * (100 - percentageOther)) / 100,
-		// );
-		// for (const key of db.keys()) {
-		// 	if (key < opts.startkey || key > opts.endkey) continue;
-		// 	db.get(key, "/type=state");
-		// 	// db.get(key);
-		// 	// const obj = db.get(key, "/type=state");
-		// 	// if (obj) calls++;
-		// }
-	}
+	// // let calls = 0;
+	// function getObjectView(opts: { startkey: string; endkey: string }) {
+	// 	return db.getMany(opts.startkey, opts.endkey, "/type=state");
+	// 	// ret = ret.filter((x: any) => x.type === "state");
+	// 	// assert.strictEqual(
+	// 	// 	ret.length,
+	// 	// 	(noAllObjects * (100 - percentageOther)) / 100,
+	// 	// );
+	// 	// for (const key of db.keys()) {
+	// 	// 	if (key < opts.startkey || key > opts.endkey) continue;
+	// 	// 	db.get(key, "/type=state");
+	// 	// 	// db.get(key);
+	// 	// 	// const obj = db.get(key, "/type=state");
+	// 	// 	// if (obj) calls++;
+	// 	// }
+	// }
 
-	console.time("kalt");
-	let calls = getObjectView({
-		startkey: "benchmark.0.test",
-		endkey: "benchmark.0.test\u9999",
-	}).length;
-	console.timeEnd("kalt");
+	// console.time("kalt");
+	// let calls = getObjectView({
+	// 	startkey: "benchmark.0.test",
+	// 	endkey: "benchmark.0.test\u9999",
+	// }).length;
+	// console.timeEnd("kalt");
 
-	console.log("calls", calls);
+	// console.log("calls", calls);
 
-	console.time("warm");
-	calls = getObjectView({
-		startkey: "benchmark.0.test",
-		endkey: "benchmark.0.test\u9999",
-	}).length;
-	console.timeEnd("warm");
+	// console.time("warm");
+	// calls = getObjectView({
+	// 	startkey: "benchmark.0.test",
+	// 	endkey: "benchmark.0.test\u9999",
+	// }).length;
+	// console.timeEnd("warm");
 
-	console.time("warm");
-	calls = getObjectView({
-		startkey: "benchmark.0.test",
-		endkey: "benchmark.0.test\u9999",
-	}).length;
-	console.timeEnd("warm");
+	// console.time("warm");
+	// calls = getObjectView({
+	// 	startkey: "benchmark.0.test",
+	// 	endkey: "benchmark.0.test\u9999",
+	// }).length;
+	// console.timeEnd("warm");
 
-	console.time("warm");
-	calls = getObjectView({
-		startkey: "benchmark.0.test",
-		endkey: "benchmark.0.test\u9999",
-	}).length;
-	console.timeEnd("warm");
+	// console.time("warm");
+	// calls = getObjectView({
+	// 	startkey: "benchmark.0.test",
+	// 	endkey: "benchmark.0.test\u9999",
+	// }).length;
+	// console.timeEnd("warm");
 
-	db.clear();
-	await db.close();
+	// db.clear();
+	// await db.close();
 
-	process.exit(0);
+	// process.exit(0);
 
 	await b.suite(
 		"rsonl-db",
 
-		b.add("getObjectView", () => {
-			getObjectView({
-				startkey: "benchmark.0.test",
-				endkey: "benchmark.0.test\u9999",
-			});
-		}),
-
-		// b.add("getObject", async () => {
-		// 	db.get("benchmark.0.test.1");
+		// b.add("getObjectView", () => {
+		// 	getObjectView({
+		// 		startkey: "benchmark.0.test",
+		// 		endkey: "benchmark.0.test\u9999",
+		// 	});
 		// }),
+
+		// // b.add("getObject", async () => {
+		// // 	db.get("benchmark.0.test.1");
+		// // }),
 
 		// b.add("getObjectNull", async () => {
 		// 	db.get("benchmark.0.foobar");
@@ -191,26 +191,36 @@ async function run() {
 		// 	db.get("test-prim");
 		// }),
 
-		// b.add("getKeys", async () => {
-		// 	for (const key of db.keys()) {
-		// 	}
-		// }),
+		b.add("getKeys", async () => {
+			for (const _key of db.keys()) {
+			}
+		}),
 
-		// b.add("spreadKeys", async () => {
-		// 	[...db.keys()];
-		// }),
+		b.add("spreadKeys", async () => {
+			[...db.keys()];
+		}),
 
-		// b.add("getKeys -> getObj", async () => {
-		// 	for (const key of db.keys()) {
-		// 		db.get(key);
-		// 	}
-		// }),
+		b.add("getKeys -> getObj", async () => {
+			for (const key of db.keys()) {
+				db.get(key);
+			}
+		}),
 
-		// b.add("spreadKeys -> getObj", async () => {
-		// 	for (const key of [...db.keys()]) {
-		// 		db.get(key);
-		// 	}
-		// }),
+		b.add("spreadKeys -> getObj", async () => {
+			for (const key of [...db.keys()]) {
+				db.get(key);
+			}
+		}),
+
+		b.add("values", async () => {
+			for (const _v of db.values()) {
+			}
+		}),
+
+		b.add("entries", async () => {
+			for (const _e of db.entries()) {
+			}
+		}),
 
 		b.cycle(),
 		b.complete(),
