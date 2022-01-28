@@ -1,6 +1,6 @@
 {
   "name": "@alcalzone/rsonl-db-linux-arm64-gnu",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "os": [
     "linux"
   ],
@@ -11,7 +11,7 @@
   "files": [
     "rsonl-db.linux-arm64-gnu.node"
   ],
-  "description": "rsonl-db implementation used by the Z-Wave protocol, implemented in Rust",
+  "description": "Simple JSONL-based key-value store",
   "keywords": [
     "napi-rs",
     "NAPI",
