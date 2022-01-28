@@ -305,7 +305,7 @@ impl RsonlDB<Opened> {
     // Limit the results to the start_key...end_key range
     keys = keys
       .iter()
-      .filter(|key| start_key.lt(key.as_str()) && end_key.gt(key.as_str()))
+      .filter(|key| key.as_str().ge(start_key) && key.as_str().le(end_key))
       .map(|k| k.to_owned())
       .collect();
 
