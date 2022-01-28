@@ -125,10 +125,10 @@ pub(crate) async fn persistence_thread(
           });
 
           if stop || journal.len() > 0 {
-            for str in journal.iter() {
+            for str in journal {
               if str == "" {
                 // Truncate the file
-                writer.seek(SeekFrom::Start(0)).await?;
+                writer.rewind().await?;
                 writer.get_ref().set_len(0).await?;
                 // Now the DB size is effectively 0 and we have no "uncompressed" changes pending
                 uncompressed_size = 0;

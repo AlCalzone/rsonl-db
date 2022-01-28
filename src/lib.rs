@@ -136,13 +136,13 @@ impl JsonlDB {
   }
 
   #[napi]
-  pub fn set_primitive(&mut self, key: String, value: serde_json::Value) -> Result<()> {
+  pub fn set_primitive(&mut self, env: Env, key: String, value: serde_json::Value) -> Result<()> {
     if !(value.is_null() || value.is_number() || value.is_string() || value.is_boolean()) {
       return Err(jserr!("The value {:?} is not a primitive!", value));
     }
 
     let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
-    db.set_native(key, value);
+    db.set_native(env, key, value);
 
     Ok(())
   }
@@ -159,15 +159,15 @@ impl JsonlDB {
     let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
 
     let reference = env.create_reference(value)?;
-    db.set_reference(key, reference, stringified, index_keys);
+    db.set_reference(env, key, reference, stringified, index_keys);
 
     Ok(())
   }
 
   #[napi]
-  pub fn delete(&mut self, key: String) -> Result<bool> {
+  pub fn delete(&mut self, env: Env, key: String) -> Result<bool> {
     let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
-    Ok(db.delete(key))
+    Ok(db.delete(env, key))
   }
 
   #[napi]
@@ -195,9 +195,9 @@ impl JsonlDB {
   }
 
   #[napi]
-  pub fn clear(&mut self) -> Result<()> {
+  pub fn clear(&mut self, env: Env) -> Result<()> {
     let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
-    db.clear();
+    db.clear(env);
     Ok(())
   }
 
@@ -207,21 +207,21 @@ impl JsonlDB {
     Ok(db.size() as u32)
   }
 
-  // #[napi(ts_args_type = "callback: (value: any, key: string) => void")]
-  // pub fn for_each<T: Fn(serde_json::Value, String) -> Result<()>>(
-  //   &mut self,
-  //   callback: T,
-  // ) -> Result<()> {
-  //   let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
+  #[napi(ts_args_type = "callback: (value: any, key: string) => void")]
+  pub fn for_each<T: Fn(JsValue, String) -> Result<()>>(
+    &mut self, env: Env,
+    callback: T,
+  ) -> Result<()> {
+    let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
 
-  //   for k in db.all_keys() {
-  //     let v = db.get(&k);
-  //     if let Some(v) = v {
-  //       callback(v.clone().into(), k.clone()).unwrap();
-  //     }
-  //   }
-  //   Ok(())
-  // }
+    for k in db.all_keys() {
+      let v = db.get(env, &k);
+      if let Some(v) = v {
+        callback(v, k.clone()).unwrap();
+      }
+    }
+    Ok(())
+  }
 
   #[napi]
   pub fn get_keys(&mut self) -> Result<Vec<String>> {

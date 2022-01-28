@@ -14,7 +14,9 @@ use crate::db_options::DBOptions;
 use crate::js_values::{map_to_object, vec_to_array, JsValue};
 use crate::lockfile::Lockfile;
 use crate::persistence::persistence_thread;
-use crate::storage::{parse_entries, DBEntry, Index, JournalEntry, SharedStorage, Storage};
+use crate::storage::{
+  drop_safe, parse_entries, DBEntry, Index, JournalEntry, SharedStorage, Storage,
+};
 use crate::util::{replace_dirname, safe_parent};
 
 pub(crate) struct RsonlDB<S: DBState> {
@@ -227,38 +229,46 @@ impl RsonlDB<Opened> {
     })
   }
 
-  pub fn set_native(&mut self, key: String, value: serde_json::Value) {
+  pub fn set_native(&mut self, env: napi::Env, key: String, value: serde_json::Value) {
     self.state.index.add_value_checked(&key, &value);
-    self.state.storage.insert(key, DBEntry::Native(value));
+    let old = self.state.storage.insert(key, DBEntry::Native(value));
+    drop_safe(env, old);
   }
 
   pub fn set_reference(
     &mut self,
+    env: napi::Env,
     key: String,
     obj: Ref<()>,
     stringified: String,
     index_keys: Vec<String>,
   ) {
     self.state.index.add_many(&key, index_keys);
-    self
+    let old = self
       .state
       .storage
       .insert(key, DBEntry::Reference(stringified, obj));
+    drop_safe(env, old);
   }
 
-  pub fn delete(&mut self, key: String) -> bool {
+  pub fn delete(&mut self, env: napi::Env, key: String) -> bool {
     if !self.has(&key) {
       return false;
     };
 
     self.state.index.remove(&key);
-    self.state.storage.remove(key);
+    let old = self.state.storage.remove(key);
+    drop_safe(env, old);
     true
   }
 
-  pub fn clear(&mut self) {
+  pub fn clear(&mut self, env: napi::Env) {
     self.state.index.clear();
-    self.state.storage.clear();
+    let old = self.state.storage.clear();
+
+    for e in old {
+      drop_safe(env, Some(e));
+    }
   }
 
   pub fn has(&mut self, key: &String) -> bool {

@@ -6,7 +6,6 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.JsonlDB = void 0;
 const lib_1 = require("./lib");
 const path_1 = __importDefault(require("path"));
-// @ts-expect-error
 class JsonlDB {
     constructor(filename, options = {}) {
         this.validateOptions(options);
@@ -57,13 +56,8 @@ class JsonlDB {
     dump(filename) {
         return this.db.dump(filename);
     }
-    async compress() {
-        // We REALLY don't want to compress twice in parallel
-        if (!this._compressPromise) {
-            this._compressPromise = this.db.compress();
-        }
-        await this._compressPromise;
-        this._compressPromise = undefined;
+    compress() {
+        return this.db.compress();
     }
     clear() {
         var _a;
@@ -109,6 +103,11 @@ class JsonlDB {
     get size() {
         return this.db.size;
     }
+    forEach(callback, thisArg) {
+        this.db.forEach((v, k) => {
+            callback.call(thisArg, v, k, this);
+        });
+    }
     getKeysCached() {
         if (!this._keysCache) {
             this._keysCache = new Set(JSON.parse(this.db.getKeysStringified()));
@@ -129,11 +128,7 @@ class JsonlDB {
             .filter((k) => !!k);
     }
     keys() {
-        const that = this;
-        return (function* () {
-            for (const k of that.getKeysCached())
-                yield k;
-        })();
+        return this.getKeysCached()[Symbol.iterator]();
     }
     entries() {
         const that = this;

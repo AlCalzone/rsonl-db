@@ -1,9 +1,10 @@
 use std::collections::{HashMap, HashSet};
 use std::io::Error;
 use std::sync::{Arc, Mutex};
+use std::vec;
 
 use indexmap::IndexMap;
-use napi::Ref;
+use napi::{Env, Ref};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::{
@@ -46,6 +47,21 @@ impl Into<String> for &DBEntry {
     match self {
       DBEntry::Reference(str, _) => str.to_owned(),
       DBEntry::Native(v) => serde_json::to_string(v).unwrap(),
+    }
+  }
+}
+
+pub(crate) fn drop_safe(env: Env, entry: Option<DBEntry>) {
+  if let Some(e) = entry {
+    match e {
+      DBEntry::Reference(_, mut r) => {
+        // referenced JS objects MUST be unref'ed
+        r.unref(env).ok();
+        drop(r);
+      }
+      DBEntry::Native(v) => {
+        drop(v);
+      }
     }
   }
 }
@@ -200,31 +216,54 @@ impl SharedStorage {
     entries.len()
   }
 
-  pub fn insert(&mut self, key: String, value: DBEntry) {
+  // pub fn journal_len(&mut self) -> usize {
+  //   let storage = self.lock().unwrap();
+  //   storage.journal.len()
+  // }
+
+  pub fn insert(&mut self, key: String, value: DBEntry) -> Option<DBEntry> {
     let mut storage = self.lock().unwrap();
-    storage.entries.insert(key.clone(), value);
+    let old = storage.entries.insert(key.clone(), value);
+    // Deduplicate while inserting, removing all previous pending writes for this key
+    storage.journal.retain(|e| match e {
+      JournalEntry::Set(k) if k == &key => false,
+      JournalEntry::Delete(k) if k == &key => false,
+      _ => true,
+    });
     storage.journal.push(JournalEntry::Set(key));
+    old
   }
 
-  pub fn remove(&mut self, key: String) {
+  pub fn remove(&mut self, key: String) -> Option<DBEntry> {
     let mut storage = self.lock().unwrap();
-    storage.entries.remove(&key);
+    let ret = storage.entries.remove(&key);
+    // Deduplicate while inserting, removing all previous pending writes for this key
+    storage.journal.retain(|e| match e {
+      JournalEntry::Set(k) if k == &key => false,
+      JournalEntry::Delete(k) if k == &key => false,
+      _ => true,
+    });
     storage.journal.push(JournalEntry::Delete(key));
+    ret
   }
 
-  pub fn clear(&mut self) {
+  pub fn clear(&mut self) -> Vec<DBEntry> {
     let mut storage = self.lock().unwrap();
-    storage.entries.clear();
+    let ret = storage.entries.drain(..).map(|(_, e)| e).collect();
+    // All pending writes are obsolete, remove them from the journal
+    storage.journal.clear();
     storage.journal.push(JournalEntry::Clear);
+    ret
   }
 
   pub fn drain_journal(&mut self) -> Vec<String> {
     let mut storage = self.lock().unwrap();
 
     let journal: Vec<JournalEntry> = storage.journal.splice(.., []).collect();
+
     journal
-      .iter()
-      .filter_map(|j| journal_entry_to_string(&storage.entries, j))
+      .into_iter()
+      .filter_map(|j| journal_entry_to_string(&storage.entries, &j))
       .collect()
   }
 
@@ -240,19 +279,18 @@ impl SharedStorage {
 
     let journal: Vec<JournalEntry> = journal.splice(.., []).collect();
     journal
-      .iter()
-      .filter_map(|j| journal_entry_to_string(&storage.entries, j))
+      .into_iter()
+      .filter_map(|j| journal_entry_to_string(&storage.entries, &j))
       .collect()
   }
 
   pub fn clone_journal(&mut self) -> Vec<String> {
     let storage = self.lock().unwrap();
-    // let journal = &mut storage.journal;
     storage
       .journal
       .clone()
-      .iter()
-      .filter_map(|j| journal_entry_to_string(&storage.entries, j))
+      .into_iter()
+      .filter_map(|j| journal_entry_to_string(&storage.entries, &j))
       .collect()
   }
 }
@@ -273,6 +311,6 @@ fn journal_entry_to_string(
       None => None,
     },
     JournalEntry::Delete(key) => Some(json!({ "k": key }).to_string()),
-    JournalEntry::Clear => Some("".to_owned()),
+    JournalEntry::Clear => Some("".to_string()),
   }
 }

@@ -1,7 +1,6 @@
 import { JsonlDB as JsonlDBNative, JsonlDBOptions } from "./lib";
 import path from "path";
 
-// @ts-expect-error
 export class JsonlDB<V> implements Map<string, V> {
 	private readonly db: JsonlDBNative;
 	private readonly options: JsonlDBOptions;
@@ -67,14 +66,8 @@ export class JsonlDB<V> implements Map<string, V> {
 		return this.db.dump(filename);
 	}
 
-	private _compressPromise: Promise<void> | undefined;
-	public async compress(): Promise<void> {
-		// We REALLY don't want to compress twice in parallel
-		if (!this._compressPromise) {
-			this._compressPromise = this.db.compress();
-		}
-		await this._compressPromise;
-		this._compressPromise = undefined;
+	public compress(): Promise<void> {
+		return this.db.compress();
 	}
 
 	public clear(): void {
@@ -132,14 +125,14 @@ export class JsonlDB<V> implements Map<string, V> {
 		return this.db.size;
 	}
 
-	// public forEach(
-	// 	callback: (value: V, key: string, map: Map<string, V>) => void,
-	// 	thisArg?: any,
-	// ): void {
-	// 	this.db.forEach((v, k) => {
-	// 		callback.call(thisArg, v, k, this);
-	// 	});
-	// }
+	public forEach(
+		callback: (value: V, key: string, map: Map<string, V>) => void,
+		thisArg?: any,
+	): void {
+		this.db.forEach((v, k) => {
+			callback.call(thisArg, v, k, this);
+		});
+	}
 
 	private _keysCache: Set<string> | undefined;
 	private getKeysCached(): Set<string> {
@@ -161,10 +154,7 @@ export class JsonlDB<V> implements Map<string, V> {
 	}
 
 	public keys(): IterableIterator<string> {
-		const that = this;
-		return (function* () {
-			for (const k of that.getKeysCached()) yield k;
-		})();
+		return this.getKeysCached()[Symbol.iterator]();
 	}
 
 	public entries(): IterableIterator<[string, V]> {

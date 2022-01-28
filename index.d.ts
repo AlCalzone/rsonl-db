@@ -8,7 +8,6 @@ export declare class JsonlDB<V> implements Map<string, V> {
     close(): Promise<void>;
     get isOpen(): boolean;
     dump(filename: string): Promise<void>;
-    private _compressPromise;
     compress(): Promise<void>;
     clear(): void;
     delete(key: string): boolean;
@@ -17,6 +16,7 @@ export declare class JsonlDB<V> implements Map<string, V> {
     getMany(startkey: string, endkey: string, objectFilter?: string): V[];
     has(key: string): boolean;
     get size(): number;
+    forEach(callback: (value: V, key: string, map: Map<string, V>) => void, thisArg?: any): void;
     private _keysCache;
     private getKeysCached;
     private deriveIndexKeys;

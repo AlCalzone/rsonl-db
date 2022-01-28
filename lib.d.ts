@@ -50,6 +50,7 @@ export class JsonlDB {
 	): unknown[];
 	clear(): void;
 	get size(): number;
+	forEach(callback: (value: any, key: string) => void): void;
 	getKeys(): Array<string>;
 	getKeysStringified(): string;
 	exportJson(filename: string, pretty: boolean): Promise<void>;
