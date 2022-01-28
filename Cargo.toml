@@ -2,7 +2,7 @@
 authors = ["AlCalzone <d.griesel@gmx.net>"]
 edition = "2021"
 name = "rsonl-db"
-version = "0.3.0"
+version = "0.3.1"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
