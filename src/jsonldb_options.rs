@@ -1,7 +1,8 @@
 use napi_derive::napi;
 
-use crate::db_options::{
-  AutoCompressOptionsBuilder, DBOptions, DBOptionsBuilder, ThrottleFSOptionsBuilder,
+use crate::{
+  db_options::{AutoCompressOptionsBuilder, DBOptions, DBOptionsBuilder, ThrottleFSOptionsBuilder},
+  error::JsonlDBError,
 };
 
 #[napi(object, js_name = "JsonlDBOptions")]
@@ -54,8 +55,10 @@ impl Default for JsonlDBOptions {
   }
 }
 
-impl Into<DBOptions> for JsonlDBOptions {
-  fn into(self) -> DBOptions {
+impl TryInto<DBOptions> for JsonlDBOptions {
+  type Error = JsonlDBError;
+
+  fn try_into(self) -> Result<DBOptions, Self::Error> {
     let mut ret = DBOptionsBuilder::default();
 
     if let Some(ignore_read_errors) = self.ignore_read_errors {
@@ -83,7 +86,11 @@ impl Into<DBOptions> for JsonlDBOptions {
         compress.on_open(on_open);
       }
 
-      ret.auto_compress(compress.build().unwrap());
+      ret.auto_compress(
+        compress
+          .build()
+          .or_else(|e| Err(JsonlDBError::InvalidOptions { source: e.into() }))?,
+      );
     }
 
     if let Some(opts) = self.throttle_fs {
@@ -92,7 +99,11 @@ impl Into<DBOptions> for JsonlDBOptions {
       if let Some(max_buf) = opts.max_buffered_commands {
         throttle.max_buffered_commands(max_buf as usize);
       }
-      ret.throttle_fs(throttle.build().unwrap());
+      ret.throttle_fs(
+        throttle
+          .build()
+          .or_else(|e| Err(JsonlDBError::InvalidOptions { source: e.into() }))?,
+      );
     }
 
     if let Some(lockfile_directory) = self.lockfile_directory {
@@ -103,12 +114,16 @@ impl Into<DBOptions> for JsonlDBOptions {
       ret.index_paths(index_paths);
     }
 
-    ret.build().unwrap()
+    ret
+      .build()
+      .or_else(|e| Err(JsonlDBError::InvalidOptions { source: e.into() }))
   }
 }
 
-impl Into<DBOptions> for Option<JsonlDBOptions> {
-  fn into(self) -> DBOptions {
-    return self.unwrap_or_default().into();
+impl TryInto<DBOptions> for Option<JsonlDBOptions> {
+  type Error = JsonlDBError;
+
+  fn try_into(self) -> Result<DBOptions, Self::Error> {
+    return self.unwrap_or_default().try_into();
   }
 }

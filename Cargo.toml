@@ -10,15 +10,17 @@ version = "0.3.1"
 crate-type = ["cdylib"]
 
 [dependencies]
+anyhow = "1.0.53"
 derive_builder = "0.10.2"
 filetime = "0.2.15"
 indexmap = "1.8.0"
-# napi = { path = "../napi-rs/crates/napi", features = ["napi6", "serde-json", "tokio_rt"] }
-# napi-derive = { path = "../napi-rs/crates/macro" }
-napi = { git = "https://github.com/AlCalzone/napi-rs", branch = "auto-number", features = ["napi6", "serde-json", "tokio_rt"] }
-napi-derive = { git = "https://github.com/AlCalzone/napi-rs", branch = "auto-number" }
+napi = { path = "../napi-rs/crates/napi", features = ["napi6", "serde-json", "tokio_rt"] }
+napi-derive = { path = "../napi-rs/crates/macro" }
+# napi = { git = "https://github.com/AlCalzone/napi-rs", branch = "auto-number", features = ["napi6", "serde-json", "tokio_rt"] }
+# napi-derive = { git = "https://github.com/AlCalzone/napi-rs", branch = "auto-number" }
 serde = { version = "1.0.133", features = ["derive"] }
 serde_json = "1.0.74"
+thiserror = "1.0.30"
 tokio = { version = "1", features = ["fs", "time", "io-util"] }
 
 [target.'cfg(all(any(windows, unix), target_arch = "x86_64", not(target_env = "musl")))'.dependencies]

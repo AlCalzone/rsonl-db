@@ -1,6 +1,7 @@
 #![deny(clippy::all)]
 
 use db_options::DBOptions;
+use error::JsonlDBError;
 use js_values::JsValue;
 use napi::{bindgen_prelude::*, JsObject};
 use napi_derive::napi;
@@ -77,7 +78,7 @@ pub struct JsonlDB {
 impl JsonlDB {
   #[napi(constructor)]
   pub fn new(filename: String, options: Option<JsonlDBOptions>) -> Result<Self> {
-    let options: DBOptions = options.into();
+    let options: DBOptions = options.try_into()?;
 
     Ok(JsonlDB {
       r: DB::Closed(RsonlDB::new(filename, options)),
@@ -86,7 +87,7 @@ impl JsonlDB {
 
   #[napi]
   pub async fn open(&mut self) -> Result<()> {
-    let db = self.r.as_closed_mut().ok_or(jserr!("DB is already open"))?;
+    let db = self.r.as_closed_mut().ok_or(JsonlDBError::AlreadyOpen)?;
     let db = db.open().await?;
     self.r = DB::Opened(db);
 
@@ -95,7 +96,7 @@ impl JsonlDB {
 
   #[napi]
   pub async fn half_close(&mut self) -> Result<()> {
-    let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
+    let db = self.r.as_opened_mut().ok_or(JsonlDBError::NotOpen)?;
     let db = db.close().await?;
     self.r = DB::HalfClosed(db);
 
@@ -107,7 +108,7 @@ impl JsonlDB {
     let db = self
       .r
       .as_half_closed_mut()
-      .ok_or(jserr!("DB is not in half-closed state"))?;
+      .ok_or(JsonlDBError::NotStopped)?;
     let db = db.close(env)?;
     self.r = DB::Closed(db);
 
@@ -116,7 +117,7 @@ impl JsonlDB {
 
   #[napi]
   pub async fn dump(&mut self, filename: String) -> Result<()> {
-    let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
+    let db = self.r.as_opened_mut().ok_or(JsonlDBError::NotOpen)?;
     db.dump(&filename).await?;
 
     Ok(())
@@ -124,7 +125,7 @@ impl JsonlDB {
 
   #[napi]
   pub async fn compress(&mut self) -> Result<()> {
-    let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
+    let db = self.r.as_opened_mut().ok_or(JsonlDBError::NotOpen)?;
     db.compress().await?;
 
     Ok(())
@@ -138,10 +139,10 @@ impl JsonlDB {
   #[napi]
   pub fn set_primitive(&mut self, env: Env, key: String, value: serde_json::Value) -> Result<()> {
     if !(value.is_null() || value.is_number() || value.is_string() || value.is_boolean()) {
-      return Err(jserr!("The value {:?} is not a primitive!", value));
+      return Err(JsonlDBError::NotPrimitive(value).into());
     }
 
-    let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
+    let db = self.r.as_opened_mut().ok_or(JsonlDBError::NotOpen)?;
     db.set_native(env, key, value);
 
     Ok(())
@@ -156,7 +157,7 @@ impl JsonlDB {
     stringified: String,
     index_keys: Vec<String>,
   ) -> Result<()> {
-    let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
+    let db = self.r.as_opened_mut().ok_or(JsonlDBError::NotOpen)?;
 
     let reference = env.create_reference(value)?;
     db.set_reference(env, key, reference, stringified, index_keys);
@@ -166,19 +167,19 @@ impl JsonlDB {
 
   #[napi]
   pub fn delete(&mut self, env: Env, key: String) -> Result<bool> {
-    let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
+    let db = self.r.as_opened_mut().ok_or(JsonlDBError::NotOpen)?;
     Ok(db.delete(env, key))
   }
 
   #[napi]
   pub fn has(&mut self, key: String) -> Result<bool> {
-    let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
+    let db = self.r.as_opened_mut().ok_or(JsonlDBError::NotOpen)?;
     Ok(db.has(&key))
   }
 
   #[napi(ts_return_type = "unknown")]
   pub fn get(&mut self, env: Env, key: String) -> Result<Option<JsValue>> {
-    let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
+    let db = self.r.as_opened_mut().ok_or(JsonlDBError::NotOpen)?;
     Ok(db.get(env, &key))
   }
 
@@ -190,29 +191,30 @@ impl JsonlDB {
     end_key: String,
     obj_filter: Option<String>,
   ) -> Result<Vec<JsValue>> {
-    let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
+    let db = self.r.as_opened_mut().ok_or(JsonlDBError::NotOpen)?;
     Ok(db.get_many(env, &start_key, &end_key, obj_filter))
   }
 
   #[napi]
   pub fn clear(&mut self, env: Env) -> Result<()> {
-    let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
+    let db = self.r.as_opened_mut().ok_or(JsonlDBError::NotOpen)?;
     db.clear(env);
     Ok(())
   }
 
   #[napi(getter)]
   pub fn size(&mut self) -> Result<u32> {
-    let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
+    let db = self.r.as_opened_mut().ok_or(JsonlDBError::NotOpen)?;
     Ok(db.size() as u32)
   }
 
   #[napi(ts_args_type = "callback: (value: any, key: string) => void")]
   pub fn for_each<T: Fn(JsValue, String) -> Result<()>>(
-    &mut self, env: Env,
+    &mut self,
+    env: Env,
     callback: T,
   ) -> Result<()> {
-    let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
+    let db = self.r.as_opened_mut().ok_or(JsonlDBError::NotOpen)?;
 
     for k in db.all_keys() {
       let v = db.get(env, &k);
@@ -225,13 +227,13 @@ impl JsonlDB {
 
   #[napi]
   pub fn get_keys(&mut self) -> Result<Vec<String>> {
-    let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
+    let db = self.r.as_opened_mut().ok_or(JsonlDBError::NotOpen)?;
     Ok(db.all_keys())
   }
 
   #[napi]
   pub fn get_keys_stringified(&mut self) -> Result<String> {
-    let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
+    let db = self.r.as_opened_mut().ok_or(JsonlDBError::NotOpen)?;
     let ret = db.all_keys();
     let ret = serde_json::to_string(&ret)?;
     Ok(ret)
@@ -239,21 +241,21 @@ impl JsonlDB {
 
   #[napi]
   pub async fn export_json(&mut self, filename: String, pretty: bool) -> Result<()> {
-    let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
+    let db = self.r.as_opened_mut().ok_or(JsonlDBError::NotOpen)?;
     db.export_json(&filename, pretty).await.unwrap();
     Ok(())
   }
 
   #[napi]
   pub async fn import_json_file(&mut self, filename: String) -> Result<()> {
-    let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
+    let db = self.r.as_opened_mut().ok_or(JsonlDBError::NotOpen)?;
     db.import_json_file(&filename).await.unwrap();
     Ok(())
   }
 
   #[napi]
   pub fn import_json_string(&mut self, json: String) -> Result<()> {
-    let db = self.r.as_opened_mut().ok_or(jserr!("DB is not open"))?;
+    let db = self.r.as_opened_mut().ok_or(JsonlDBError::NotOpen)?;
     db.import_json_string(&json).unwrap();
     Ok(())
   }
