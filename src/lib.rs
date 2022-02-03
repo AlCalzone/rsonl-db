@@ -180,7 +180,8 @@ impl JsonlDB {
   #[napi(ts_return_type = "unknown")]
   pub fn get(&mut self, env: Env, key: String) -> Result<Option<JsValue>> {
     let db = self.r.as_opened_mut().ok_or(JsonlDBError::NotOpen)?;
-    Ok(db.get(env, &key))
+    let ret = db.get(env, &key)?;
+    Ok(ret)
   }
 
   #[napi(ts_return_type = "unknown[]")]
@@ -192,7 +193,8 @@ impl JsonlDB {
     obj_filter: Option<String>,
   ) -> Result<Vec<JsValue>> {
     let db = self.r.as_opened_mut().ok_or(JsonlDBError::NotOpen)?;
-    Ok(db.get_many(env, &start_key, &end_key, obj_filter))
+    let ret = db.get_many(env, &start_key, &end_key, obj_filter)?;
+    Ok(ret)
   }
 
   #[napi]
@@ -217,8 +219,9 @@ impl JsonlDB {
     let db = self.r.as_opened_mut().ok_or(JsonlDBError::NotOpen)?;
 
     for k in db.all_keys() {
-      let v = db.get(env, &k);
+      let v = db.get(env, &k)?;
       if let Some(v) = v {
+        // TODO: do we need to replace this unwrap?
         callback(v, k.clone()).unwrap();
       }
     }
@@ -242,21 +245,21 @@ impl JsonlDB {
   #[napi]
   pub async fn export_json(&mut self, filename: String, pretty: bool) -> Result<()> {
     let db = self.r.as_opened_mut().ok_or(JsonlDBError::NotOpen)?;
-    db.export_json(&filename, pretty).await.unwrap();
+    db.export_json(&filename, pretty).await?;
     Ok(())
   }
 
   #[napi]
   pub async fn import_json_file(&mut self, filename: String) -> Result<()> {
     let db = self.r.as_opened_mut().ok_or(JsonlDBError::NotOpen)?;
-    db.import_json_file(&filename).await.unwrap();
+    db.import_json_file(&filename).await?;
     Ok(())
   }
 
   #[napi]
   pub fn import_json_string(&mut self, json: String) -> Result<()> {
     let db = self.r.as_opened_mut().ok_or(JsonlDBError::NotOpen)?;
-    db.import_json_string(&json).unwrap();
+    db.import_json_string(&json)?;
     Ok(())
   }
 }

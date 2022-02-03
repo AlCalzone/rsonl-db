@@ -1,8 +1,4 @@
-use std::{
-  io::{Error, SeekFrom},
-  path::Path,
-  time::Duration,
-};
+use std::{io::SeekFrom, path::Path, time::Duration};
 
 use tokio::{
   fs::{self, File, OpenOptions},
@@ -14,12 +10,13 @@ use tokio::{
 use crate::{
   bg_thread::Command,
   db_options::{AutoCompressOptions, DBOptions},
+  error::Result,
   lockfile::Lockfile,
   storage::{format_line, SharedStorage},
-  util::{file_needs_lf, fsync_dir, safe_parent},
+  util::{file_needs_lf, fsync_dir, parent_dir},
 };
 
-fn is_stop_cmd(cmd: Result<Option<Command>, Elapsed>) -> bool {
+fn is_stop_cmd(cmd: std::result::Result<Option<Command>, Elapsed>) -> bool {
   match cmd {
     Ok(Some(Command::Stop)) => true,
     _ => false,
@@ -55,7 +52,7 @@ pub(crate) async fn persistence_thread(
   mut lock: Lockfile,
   mut rx: Receiver<Command>,
   opts: &DBOptions,
-) -> Result<(), Error> {
+) -> Result<()> {
   // Keep track of the write accesses
   let mut last_write = Instant::now();
   let throttle_interval = opts.throttle_fs.interval_ms as u128;
@@ -69,10 +66,10 @@ pub(crate) async fn persistence_thread(
 
   // Open writer and make sure the file ends with LF
   let mut writer = {
-    let needs_lf = file_needs_lf(&mut file).await.unwrap();
+    let needs_lf = file_needs_lf(&mut file).await?;
     let mut ret = BufWriter::new(file);
     if needs_lf {
-      ret.write(b"\n").await.unwrap();
+      ret.write(b"\n").await?;
     }
     ret
   };
@@ -159,7 +156,7 @@ pub(crate) async fn persistence_thread(
         let filename = filename.to_owned();
         let dump_filename = format!("{}.dump", &filename);
         let backup_filename = format!("{}.bak", &filename);
-        let dirname = safe_parent(Path::new(&filename)).unwrap();
+        let dirname = parent_dir(Path::new(&filename))?;
 
         // 1. Ensure the backup contains everything in the DB and journal
         let write_journal = storage.drain_journal();
@@ -234,11 +231,7 @@ pub(crate) async fn persistence_thread(
   Ok(())
 }
 
-async fn dump(
-  filename: &str,
-  storage: &mut SharedStorage,
-  drain_journal: bool,
-) -> Result<(), Error> {
+async fn dump(filename: &str, storage: &mut SharedStorage, drain_journal: bool) -> Result<()> {
   let dump_file = OpenOptions::new()
     .create(true)
     .write(true)
@@ -253,7 +246,7 @@ async fn dump(
   // the map, so we don't need to append them later
   // and keep a consistent state
   let (dump, journal_len) = {
-    let storage = storage.lock().unwrap();
+    let storage = storage.lock();
     let journal = &storage.journal;
 
     let dump: Vec<u8> = storage

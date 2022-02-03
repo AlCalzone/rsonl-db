@@ -1,7 +1,8 @@
 use std::collections::{HashMap, HashSet};
-use std::io::Error;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::vec;
+
+use crate::error::{JsonlDBError, Result};
 
 use indexmap::IndexMap;
 use napi::{Env, Ref};
@@ -24,11 +25,18 @@ pub(crate) enum JournalEntry {
   Clear,
 }
 
-impl From<&DBEntry> for serde_json::Value {
-  fn from(val: &DBEntry) -> Self {
-    match val {
-      DBEntry::Reference(str, _) => serde_json::from_str(str).unwrap(),
-      DBEntry::Native(v) => v.clone(),
+impl TryFrom<&DBEntry> for serde_json::Value {
+  type Error = JsonlDBError;
+
+  fn try_from(value: &DBEntry) -> std::result::Result<Self, Self::Error> {
+    match value {
+      DBEntry::Reference(str, _) => {
+        serde_json::from_str(str).map_err(|e| JsonlDBError::SerializeError {
+          reason: format!("Could not convert stringified entry {str}"),
+          source: e,
+        })
+      }
+      DBEntry::Native(v) => Ok(v.clone()),
     }
   }
 }
@@ -84,12 +92,14 @@ pub(crate) enum Entry {
 pub(crate) async fn parse_entries(
   file: &mut File,
   ignore_read_errors: bool,
-) -> Result<IndexMap<String, DBEntry>, Error> {
+) -> Result<IndexMap<String, DBEntry>> {
   let mut entries = IndexMap::<String, DBEntry>::new();
 
   let mut lines = BufReader::new(file).lines();
+  let mut line_no: u32 = 0;
   while let Some(line) = lines.next_line().await? {
     let entry = serde_json::from_str::<Entry>(&line);
+    line_no += 1;
     match entry {
       Ok(Entry::Value { k, v }) => {
         entries.insert(k, DBEntry::Native(v));
@@ -101,7 +111,10 @@ pub(crate) async fn parse_entries(
         if ignore_read_errors {
           // ignore read errors
         } else {
-          return Err(e.into());
+          return Err(JsonlDBError::SerializeError {
+            reason: format!("Cannot open DB file: Invalid data in line {line_no}"),
+            source: e,
+          });
         }
       }
     }
@@ -203,26 +216,28 @@ impl SharedStorage {
     Self(Arc::new(Mutex::new(s)))
   }
 
-  pub fn lock(
-    &mut self,
-  ) -> Result<std::sync::MutexGuard<Storage>, std::sync::PoisonError<std::sync::MutexGuard<Storage>>>
-  {
-    self.0.lock()
+  pub fn lock(&mut self) -> MutexGuard<'_, Storage> {
+    // If we cannot lock the mutex, crashing doesn't seem like the worst option.
+    self
+      .0
+      .lock()
+      .map_err(|_| JsonlDBError::other("Failed to acquire lock on storage"))
+      .unwrap()
   }
 
   pub fn len(&mut self) -> usize {
-    let storage = self.lock().unwrap();
+    let storage = self.lock();
     let entries = &storage.entries;
     entries.len()
   }
 
   // pub fn journal_len(&mut self) -> usize {
-  //   let storage = self.lock().unwrap();
+  //   let storage = self.lock();
   //   storage.journal.len()
   // }
 
   pub fn insert(&mut self, key: String, value: DBEntry) -> Option<DBEntry> {
-    let mut storage = self.lock().unwrap();
+    let mut storage = self.lock();
     let old = storage.entries.insert(key.clone(), value);
     // Deduplicate while inserting, removing all previous pending writes for this key
     storage.journal.retain(|e| match e {
@@ -235,7 +250,7 @@ impl SharedStorage {
   }
 
   pub fn remove(&mut self, key: String) -> Option<DBEntry> {
-    let mut storage = self.lock().unwrap();
+    let mut storage = self.lock();
     let ret = storage.entries.remove(&key);
     // Deduplicate while inserting, removing all previous pending writes for this key
     storage.journal.retain(|e| match e {
@@ -248,7 +263,7 @@ impl SharedStorage {
   }
 
   pub fn clear(&mut self) -> Vec<DBEntry> {
-    let mut storage = self.lock().unwrap();
+    let mut storage = self.lock();
     let ret = storage.entries.drain(..).map(|(_, e)| e).collect();
     // All pending writes are obsolete, remove them from the journal
     storage.journal.clear();
@@ -257,7 +272,7 @@ impl SharedStorage {
   }
 
   pub fn drain_journal(&mut self) -> Vec<String> {
-    let mut storage = self.lock().unwrap();
+    let mut storage = self.lock();
 
     let journal: Vec<JournalEntry> = storage.journal.splice(.., []).collect();
 
@@ -271,7 +286,7 @@ impl SharedStorage {
   where
     F: Fn(&Vec<JournalEntry>) -> bool,
   {
-    let mut storage = self.lock().unwrap();
+    let mut storage = self.lock();
     let journal = &mut storage.journal;
     if !predicate(&journal) {
       return vec![];
@@ -285,7 +300,7 @@ impl SharedStorage {
   }
 
   pub fn clone_journal(&mut self) -> Vec<String> {
-    let storage = self.lock().unwrap();
+    let storage = self.lock();
     storage
       .journal
       .clone()
