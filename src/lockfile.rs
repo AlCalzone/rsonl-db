@@ -1,10 +1,11 @@
 use filetime::FileTime;
 use std::{
   fs,
-  io::Error,
   path::{Path, PathBuf},
   time::SystemTime,
 };
+
+use crate::error::{JsonlDBError, Result};
 
 pub(crate) struct Lockfile {
   path: PathBuf,
@@ -20,9 +21,9 @@ pub(crate) enum CheckResult {
 }
 
 impl Drop for Lockfile {
-    fn drop(&mut self) {
-        self.release();
-    }
+  fn drop(&mut self) {
+    self.release();
+  }
 }
 
 impl Lockfile {
@@ -38,13 +39,12 @@ impl Lockfile {
     self.stale_interval_ms
   }
 
-  pub fn lock(&mut self) -> Result<(), Error> {
+  pub fn lock(&mut self) -> Result<()> {
     match self.check() {
       CheckResult::NoLock => self.create_lock(),
       CheckResult::Stale => self.update_lock(),
-      CheckResult::Active(_) => Err(Error::new(std::io::ErrorKind::Other, "Lockfile is in use")),
-      CheckResult::Unknown => Err(Error::new(
-        std::io::ErrorKind::Other,
+      CheckResult::Active(_) => Err(JsonlDBError::io_error_from_reason("Lockfile is in use")),
+      CheckResult::Unknown => Err(JsonlDBError::io_error_from_reason(
         "Could not acquire lockfile",
       )),
     }
@@ -72,7 +72,7 @@ impl Lockfile {
     }
   }
 
-  fn create_lock(&mut self) -> Result<(), Error> {
+  fn create_lock(&mut self) -> Result<()> {
     fs::create_dir_all(&self.path)?;
     // And remember the timestamp
     let meta = fs::metadata(&self.path)?;
@@ -81,7 +81,7 @@ impl Lockfile {
     Ok(())
   }
 
-  fn update_lock(&mut self) -> Result<(), Error> {
+  fn update_lock(&mut self) -> Result<()> {
     let now = FileTime::now();
     filetime::set_file_times(&self.path, now, now)?;
     self.mtime = Some(now.into());
@@ -103,23 +103,21 @@ impl Lockfile {
     self.mtime = None;
   }
 
-  pub fn update(&mut self) -> Result<(), Error> {
+  pub fn update(&mut self) -> Result<()> {
     match self.check() {
       CheckResult::NoLock => self.create_lock(),
       CheckResult::Stale => self.update_lock(),
       CheckResult::Active(mtime) => {
         if let Some(self_time) = self.mtime {
           if self_time != mtime {
-            return Err(Error::new(
-              std::io::ErrorKind::Other,
+            return Err(JsonlDBError::io_error_from_reason(
               "Lockfile was compromised",
             ));
           }
         }
         self.update_lock()
       }
-      CheckResult::Unknown => Err(Error::new(
-        std::io::ErrorKind::Other,
+      CheckResult::Unknown => Err(JsonlDBError::io_error_from_reason(
         "Could not update lockfile",
       )),
     }

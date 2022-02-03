@@ -98,8 +98,14 @@ pub(crate) async fn parse_entries(
   let mut lines = BufReader::new(file).lines();
   let mut line_no: u32 = 0;
   while let Some(line) = lines.next_line().await? {
-    let entry = serde_json::from_str::<Entry>(&line);
+    // Count source lines for the error message
     line_no += 1;
+    // Skip empty lines
+    if line.len() == 0 {
+      continue;
+    }
+
+    let entry = serde_json::from_str::<Entry>(&line);
     match entry {
       Ok(Entry::Value { k, v }) => {
         entries.insert(k, DBEntry::Native(v));

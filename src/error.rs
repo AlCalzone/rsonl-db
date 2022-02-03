@@ -17,7 +17,7 @@ pub enum JsonlDBError {
   #[error("Invalid options")]
   InvalidOptions { source: anyhow::Error },
 
-  #[error("IO operation failed")]
+  #[error(transparent)]
   IoError(#[from] std::io::Error),
 
   #[error("{reason}")]
@@ -48,8 +48,8 @@ impl From<JsonlDBError> for napi::Error {
 }
 
 impl JsonlDBError {
-  pub fn io_error_from_reason(reason: String) -> Self {
-    std::io::Error::new(std::io::ErrorKind::Other, reason).into()
+  pub fn io_error_from_reason(reason: impl AsRef<str>) -> Self {
+    std::io::Error::new(std::io::ErrorKind::Other, reason.as_ref().to_owned()).into()
   }
 
   pub fn serde_to_string_failed(e: serde_json::Error) -> Self {
