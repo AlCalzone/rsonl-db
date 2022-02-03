@@ -6,6 +6,22 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.JsonlDB = void 0;
 const lib_1 = require("./lib");
 const path_1 = __importDefault(require("path"));
+function wrapNativeErrorSync(executor) {
+    try {
+        return executor();
+    }
+    catch (e) {
+        throw new Error(e.message);
+    }
+}
+async function wrapNativeErrorAsync(executor) {
+    try {
+        return await executor();
+    }
+    catch (e) {
+        throw new Error(e.message);
+    }
+}
 class JsonlDB {
     constructor(filename, options = {}) {
         this.validateOptions(options);
@@ -42,32 +58,36 @@ class JsonlDB {
             }
         }
     }
-    open() {
+    async open() {
         this._keysCache = undefined;
-        return this.db.open();
+        await wrapNativeErrorAsync(() => this.db.open());
     }
     async close() {
-        await this.db.halfClose();
-        this.db.close();
+        if (!this.isOpen)
+            return;
+        await wrapNativeErrorAsync(async () => {
+            await this.db.halfClose();
+            this.db.close();
+        });
     }
     get isOpen() {
         return this.db.isOpen();
     }
     dump(filename) {
-        return this.db.dump(filename);
+        return wrapNativeErrorAsync(() => this.db.dump(filename));
     }
     compress() {
-        return this.db.compress();
+        return wrapNativeErrorAsync(() => this.db.compress());
     }
     clear() {
         var _a;
         (_a = this._keysCache) === null || _a === void 0 ? void 0 : _a.clear();
-        this.db.clear();
+        wrapNativeErrorSync(() => this.db.clear());
     }
     delete(key) {
         var _a;
         (_a = this._keysCache) === null || _a === void 0 ? void 0 : _a.delete(key);
-        return this.db.delete(key);
+        return wrapNativeErrorSync(() => this.db.delete(key));
     }
     set(key, value) {
         var _a;
@@ -76,14 +96,14 @@ class JsonlDB {
             case "number":
             case "boolean":
             case "string":
-                this.db.setPrimitive(key, value);
+                wrapNativeErrorSync(() => this.db.setPrimitive(key, value));
                 break;
             case "object":
                 if (value === null) {
-                    this.db.setPrimitive(key, value);
+                    wrapNativeErrorSync(() => this.db.setPrimitive(key, value));
                 }
                 else {
-                    this.db.setObject(key, value, JSON.stringify(value), this.deriveIndexKeys(value));
+                    wrapNativeErrorSync(() => this.db.setObject(key, value, JSON.stringify(value), this.deriveIndexKeys(value)));
                 }
                 break;
             default:
@@ -92,16 +112,16 @@ class JsonlDB {
         return this;
     }
     get(key) {
-        return this.db.get(key);
+        return wrapNativeErrorSync(() => this.db.get(key));
     }
     getMany(startkey, endkey, objectFilter) {
-        return this.db.getMany(startkey, endkey, objectFilter);
+        return wrapNativeErrorSync(() => this.db.getMany(startkey, endkey, objectFilter));
     }
     has(key) {
-        return this.db.has(key);
+        return wrapNativeErrorSync(() => this.db.has(key));
     }
     get size() {
-        return this.db.size;
+        return wrapNativeErrorSync(() => this.db.size);
     }
     forEach(callback, thisArg) {
         this.db.forEach((v, k) => {
@@ -128,7 +148,7 @@ class JsonlDB {
             .filter((k) => !!k);
     }
     keys() {
-        return this.getKeysCached()[Symbol.iterator]();
+        return wrapNativeErrorSync(() => this.getKeysCached()[Symbol.iterator]());
     }
     entries() {
         const that = this;
@@ -147,22 +167,22 @@ class JsonlDB {
         })();
     }
     [Symbol.iterator]() {
-        return this.entries();
+        return wrapNativeErrorSync(() => this.entries());
     }
     get [Symbol.toStringTag]() {
         return "JsonlDB";
     }
     async exportJson(filename, pretty = false) {
-        await this.db.exportJson(filename, pretty);
+        await wrapNativeErrorAsync(() => this.db.exportJson(filename, pretty));
     }
     importJson(jsonOrFile) {
         this._keysCache = undefined;
         if (typeof jsonOrFile === "string") {
-            return this.db.importJsonFile(jsonOrFile);
+            return wrapNativeErrorAsync(() => this.db.importJsonFile(jsonOrFile));
         }
         else {
             // Yeah, this is weird but more performant for large objects
-            return this.db.importJsonString(JSON.stringify(jsonOrFile));
+            return wrapNativeErrorSync(() => this.db.importJsonString(JSON.stringify(jsonOrFile)));
         }
     }
 }

@@ -37,6 +37,7 @@ pub(crate) struct Opened {
   index: Index,
   persistence_thread: ThreadHandle<()>,
   compress_promise: Option<Arc<Notify>>,
+  is_closing: bool
 }
 
 // Turn Opened/Closed into DB states
@@ -185,6 +186,7 @@ impl RsonlDB<Closed> {
           thread: Box::new(thread),
           tx,
         },
+        is_closing: false,
         compress_promise: None,
       },
     })
@@ -220,6 +222,8 @@ impl RsonlDB<Opened> {
     if self.options.auto_compress.on_close {
       self.compress().await?;
     }
+
+    self.state.is_closing = true;
 
     // End the all threads and wait for them to end
     self.state.persistence_thread.stop_and_join().await?;
@@ -335,6 +339,11 @@ impl RsonlDB<Opened> {
   }
 
   pub async fn dump(&mut self, filename: &str) -> Result<()> {
+    // Don't do anything while the DB is being closed
+    if self.state.is_closing {
+      return Ok(());
+    }
+
     // Send command to the persistence thread
     let notify = Arc::new(Notify::new());
     self
@@ -353,6 +362,11 @@ impl RsonlDB<Opened> {
   }
 
   pub async fn compress(&mut self) -> Result<()> {
+    // Don't do anything while the DB is being closed
+    if self.state.is_closing {
+      return Ok(());
+    }
+
     // Don't compress twice in parallel and block all further calls
     if let Some(notify) = self.state.compress_promise.as_ref() {
       notify.clone().notified().await;

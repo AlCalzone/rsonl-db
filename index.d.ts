@@ -1,5 +1,5 @@
 import { JsonlDBOptions } from "./lib";
-export declare class JsonlDB<V> implements Map<string, V> {
+export declare class JsonlDB<V = any> implements Map<string, V> {
     private readonly db;
     private readonly options;
     constructor(filename: string, options?: JsonlDBOptions);

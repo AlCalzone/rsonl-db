@@ -1,6 +1,5 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::vec;
 
 use crate::error::{JsonlDBError, Result};
 
@@ -237,10 +236,10 @@ impl SharedStorage {
     entries.len()
   }
 
-  // pub fn journal_len(&mut self) -> usize {
-  //   let storage = self.lock();
-  //   storage.journal.len()
-  // }
+  pub fn journal_len(&mut self) -> usize {
+    let storage = self.lock();
+    storage.journal.len()
+  }
 
   pub fn insert(&mut self, key: String, value: DBEntry) -> Option<DBEntry> {
     let mut storage = self.lock();
@@ -282,23 +281,6 @@ impl SharedStorage {
 
     let journal: Vec<JournalEntry> = storage.journal.splice(.., []).collect();
 
-    journal
-      .into_iter()
-      .filter_map(|j| journal_entry_to_string(&storage.entries, &j))
-      .collect()
-  }
-
-  pub fn drain_journal_if<F>(&mut self, predicate: F) -> Vec<String>
-  where
-    F: Fn(&Vec<JournalEntry>) -> bool,
-  {
-    let mut storage = self.lock();
-    let journal = &mut storage.journal;
-    if !predicate(&journal) {
-      return vec![];
-    }
-
-    let journal: Vec<JournalEntry> = journal.splice(.., []).collect();
     journal
       .into_iter()
       .filter_map(|j| journal_entry_to_string(&storage.entries, &j))

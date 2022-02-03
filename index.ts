@@ -1,7 +1,27 @@
 import { JsonlDB as JsonlDBNative, JsonlDBOptions } from "./lib";
 import path from "path";
 
-export class JsonlDB<V> implements Map<string, V> {
+function wrapNativeErrorSync<T extends (...args: any[]) => any>(
+	executor: T,
+): ReturnType<T> {
+	try {
+		return executor();
+	} catch (e: any) {
+		throw new Error(e.message);
+	}
+}
+
+async function wrapNativeErrorAsync<T extends (...args: any[]) => Promise<any>>(
+	executor: T,
+): Promise<Awaited<ReturnType<T>>> {
+	try {
+		return await executor();
+	} catch (e: any) {
+		throw new Error(e.message);
+	}
+}
+
+export class JsonlDB<V = any> implements Map<string, V> {
 	private readonly db: JsonlDBNative;
 	private readonly options: JsonlDBOptions;
 
@@ -49,13 +69,18 @@ export class JsonlDB<V> implements Map<string, V> {
 		}
 	}
 
-	public open(): Promise<void> {
+	public async open(): Promise<void> {
 		this._keysCache = undefined;
-		return this.db.open();
+		await wrapNativeErrorAsync(() => this.db.open());
 	}
+
 	public async close(): Promise<void> {
-		await this.db.halfClose();
-		this.db.close();
+		if (!this.isOpen) return;
+
+		await wrapNativeErrorAsync(async () => {
+			await this.db.halfClose();
+			this.db.close();
+		});
 	}
 
 	public get isOpen(): boolean {
@@ -63,21 +88,21 @@ export class JsonlDB<V> implements Map<string, V> {
 	}
 
 	public dump(filename: string): Promise<void> {
-		return this.db.dump(filename);
+		return wrapNativeErrorAsync(() => this.db.dump(filename));
 	}
 
 	public compress(): Promise<void> {
-		return this.db.compress();
+		return wrapNativeErrorAsync(() => this.db.compress());
 	}
 
 	public clear(): void {
 		this._keysCache?.clear();
-		this.db.clear();
+		wrapNativeErrorSync(() => this.db.clear());
 	}
 
 	public delete(key: string): boolean {
 		this._keysCache?.delete(key);
-		return this.db.delete(key);
+		return wrapNativeErrorSync(() => this.db.delete(key));
 	}
 
 	public set(key: string, value: V): this {
@@ -86,17 +111,19 @@ export class JsonlDB<V> implements Map<string, V> {
 			case "number":
 			case "boolean":
 			case "string":
-				this.db.setPrimitive(key, value);
+				wrapNativeErrorSync(() => this.db.setPrimitive(key, value));
 				break;
 			case "object":
 				if (value === null) {
-					this.db.setPrimitive(key, value);
+					wrapNativeErrorSync(() => this.db.setPrimitive(key, value));
 				} else {
-					this.db.setObject(
-						key,
-						value as any,
-						JSON.stringify(value),
-						this.deriveIndexKeys(value),
+					wrapNativeErrorSync(() =>
+						this.db.setObject(
+							key,
+							value as any,
+							JSON.stringify(value),
+							this.deriveIndexKeys(value),
+						),
 					);
 				}
 				break;
@@ -107,7 +134,7 @@ export class JsonlDB<V> implements Map<string, V> {
 	}
 
 	public get(key: string): V | undefined {
-		return this.db.get(key) as any;
+		return wrapNativeErrorSync(() => this.db.get(key) as any);
 	}
 
 	public getMany(
@@ -115,14 +142,16 @@ export class JsonlDB<V> implements Map<string, V> {
 		endkey: string,
 		objectFilter?: string,
 	): V[] {
-		return this.db.getMany(startkey, endkey, objectFilter) as any;
+		return wrapNativeErrorSync(
+			() => this.db.getMany(startkey, endkey, objectFilter) as any,
+		);
 	}
 
 	public has(key: string): boolean {
-		return this.db.has(key);
+		return wrapNativeErrorSync(() => this.db.has(key));
 	}
 	public get size(): number {
-		return this.db.size;
+		return wrapNativeErrorSync(() => this.db.size);
 	}
 
 	public forEach(
@@ -154,7 +183,9 @@ export class JsonlDB<V> implements Map<string, V> {
 	}
 
 	public keys(): IterableIterator<string> {
-		return this.getKeysCached()[Symbol.iterator]();
+		return wrapNativeErrorSync(() =>
+			this.getKeysCached()[Symbol.iterator](),
+		);
 	}
 
 	public entries(): IterableIterator<[string, V]> {
@@ -176,7 +207,7 @@ export class JsonlDB<V> implements Map<string, V> {
 	}
 
 	public [Symbol.iterator](): IterableIterator<[string, V]> {
-		return this.entries();
+		return wrapNativeErrorSync(() => this.entries());
 	}
 	public get [Symbol.toStringTag](): string {
 		return "JsonlDB";
@@ -186,7 +217,7 @@ export class JsonlDB<V> implements Map<string, V> {
 		filename: string,
 		pretty: boolean = false,
 	): Promise<void> {
-		await this.db.exportJson(filename, pretty);
+		await wrapNativeErrorAsync(() => this.db.exportJson(filename, pretty));
 	}
 
 	public importJson(filename: string): Promise<void>;
@@ -196,10 +227,14 @@ export class JsonlDB<V> implements Map<string, V> {
 	): void | Promise<void> {
 		this._keysCache = undefined;
 		if (typeof jsonOrFile === "string") {
-			return this.db.importJsonFile(jsonOrFile);
+			return wrapNativeErrorAsync(() =>
+				this.db.importJsonFile(jsonOrFile),
+			);
 		} else {
 			// Yeah, this is weird but more performant for large objects
-			return this.db.importJsonString(JSON.stringify(jsonOrFile));
+			return wrapNativeErrorSync(() =>
+				this.db.importJsonString(JSON.stringify(jsonOrFile)),
+			);
 		}
 	}
 }

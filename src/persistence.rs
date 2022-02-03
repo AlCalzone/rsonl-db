@@ -116,30 +116,34 @@ pub(crate) async fn persistence_thread(
         let stop = is_stop_cmd(command);
 
         // Write to disk if necessary
-        if stop || Instant::now().duration_since(last_write).as_millis() >= throttle_interval {
-          let journal = storage.drain_journal_if(|j| {
-            stop || (j.len() > 0 && (throttle_interval == 0 || j.len() > max_buffered_commands))
-          });
+        let journal_len = storage.journal_len();
+        let should_write = journal_len > 0
+          && (stop
+            || Instant::now().duration_since(last_write).as_millis() >= throttle_interval
+            || journal_len > max_buffered_commands);
 
-          if stop || journal.len() > 0 {
-            for str in journal {
-              if str == "" {
-                // Truncate the file
-                writer.rewind().await?;
-                writer.get_ref().set_len(0).await?;
-                // Now the DB size is effectively 0 and we have no "uncompressed" changes pending
-                uncompressed_size = 0;
-                changes_since_compress = 0;
-              } else {
-                writer.write(str.as_bytes()).await?;
-                writer.write(b"\n").await?;
-                uncompressed_size += 1;
-                changes_since_compress += 1;
-              }
+        if should_write {
+          let journal = storage.drain_journal();
+
+          for str in journal {
+            if str == "" {
+              // Truncate the file
+              writer.rewind().await?;
+              writer.get_ref().set_len(0).await?;
+              // Now the DB size is effectively 0 and we have no "uncompressed" changes pending
+              uncompressed_size = 0;
+              changes_since_compress = 0;
+            } else {
+              writer.write(str.as_bytes()).await?;
+              writer.write(b"\n").await?;
+              uncompressed_size += 1;
+              changes_since_compress += 1;
             }
-
-            last_write = Instant::now();
           }
+
+          // Make sure everything is on disk
+          writer.flush().await?;
+          last_write = Instant::now();
         }
 
         if stop {
