@@ -43,7 +43,7 @@ pub enum JsonlDBError {
 
 impl From<JsonlDBError> for napi::Error {
   fn from(error: JsonlDBError) -> Self {
-    napi::Error::from_reason(format!("{:?}", error))
+    napi::Error::from_reason(error.to_string())
   }
 }
 
