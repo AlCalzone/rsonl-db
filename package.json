@@ -1,6 +1,6 @@
 {
   "name": "@alcalzone/rsonl-db",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Simple JSONL-based key-value store",
   "main": "index.js",
   "types": "index.d.ts",
@@ -60,9 +60,9 @@
     "prepublishOnly": "napi prepublish -t npm",
     "test:reset": "jest --clear-cache",
     "test:ts": "jest",
-    "test:ci": "npm run test:ts -- --runInBand",
-    "test:watch": "npm run test:ts -- --watch",
-    "test": "npm run test:watch",
+    "test:ci": "yarn test:ts -- --runInBand",
+    "test:watch": "yarn test:ts -- --watch",
+    "test": "yarn test:ci",
     "version": "napi version",
     "debug": "node test.js"
   },

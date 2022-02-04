@@ -13,6 +13,3 @@ rustflags = [
 [target.aarch64-unknown-linux-musl]
 linker = "aarch64-linux-musl-gcc"
 rustflags = ["-C", "target-feature=-crt-static"]
-
-[net]
-git-fetch-with-cli = true
