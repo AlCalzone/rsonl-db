@@ -1,8 +1,8 @@
 use napi::{
-  bindgen_prelude::ToNapiValue,
-  Env, JsObject, Result,
+  bindgen_prelude::{FromNapiValue, ToNapiValue},
+  JsObject, Result,
 };
-use serde_json::{Map, Value};
+use serde_json::Value;
 
 pub enum JsValue {
   Primitive(Value),
@@ -21,23 +21,11 @@ impl ToNapiValue for JsValue {
   }
 }
 
-pub(crate) fn map_to_object(env: Env, map: Map<String, Value>) -> Result<JsObject> {
-  let mut obj = env.create_object()?;
-
-  for (k, v) in map.into_iter() {
-    obj.set(k, v)?;
-  }
-
-  Ok(obj)
-}
-
-pub(crate) fn vec_to_array(env: Env, vec: Vec<Value>) -> Result<JsObject> {
-  let mut obj = env.create_array_with_length(vec.len())?;
-
-  let i: u32 = 0;
-  for v in vec.into_iter() {
-    obj.set(format!("{}", &i), v)?;
-  }
-
-  Ok(obj)
+pub(crate) unsafe fn value_to_js_object(
+  env: napi::sys::napi_env,
+  value: serde_json::Value,
+) -> Result<JsObject> {
+  let native = ToNapiValue::to_napi_value(env, value)?;
+  let js_object = FromNapiValue::from_napi_value(env, native)?;
+  Ok(js_object)
 }

@@ -16,8 +16,8 @@ filetime = "0.2.15"
 indexmap = "1.8.0"
 napi = { path = "../napi-rs/crates/napi", features = ["napi6", "serde-json", "tokio_rt"] }
 napi-derive = { path = "../napi-rs/crates/macro" }
-# napi = { git = "https://github.com/AlCalzone/napi-rs", branch = "auto-number", features = ["napi6", "serde-json", "tokio_rt"] }
-# napi-derive = { git = "https://github.com/AlCalzone/napi-rs", branch = "auto-number" }
+# napi = { git = "https://github.com/AlCalzone/napi-rs", branch = "auto-number+null-string", features = ["napi6", "serde-json", "tokio_rt"] }
+# napi-derive = { git = "https://github.com/AlCalzone/napi-rs", branch = "auto-number+null-string" }
 serde = { version = "1.0.133", features = ["derive"] }
 serde_json = "1.0.74"
 thiserror = "1.0.30"

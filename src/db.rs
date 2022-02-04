@@ -11,7 +11,7 @@ use tokio::sync::{mpsc, Notify};
 use crate::bg_thread::{Command, ThreadHandle};
 use crate::db_options::DBOptions;
 use crate::error::{JsonlDBError, Result};
-use crate::js_values::{map_to_object, vec_to_array, JsValue};
+use crate::js_values::{value_to_js_object, JsValue};
 use crate::lockfile::Lockfile;
 use crate::persistence::persistence_thread;
 use crate::storage::{
@@ -37,7 +37,7 @@ pub(crate) struct Opened {
   index: Index,
   persistence_thread: ThreadHandle<()>,
   compress_promise: Option<Arc<Notify>>,
-  is_closing: bool
+  is_closing: bool,
 }
 
 // Turn Opened/Closed into DB states
@@ -475,24 +475,11 @@ fn get_or_convert_entry(
         Some(JsValue::Object(obj))
       }
 
-      DBEntry::Native(val) if val.is_array() => {
-        let vec = val.as_array().unwrap().to_owned();
+      DBEntry::Native(val) if val.is_array() || val.is_object() => {
         let stringified =
-          serde_json::to_string(&vec).map_err(|e| JsonlDBError::serde_to_string_failed(e))?;
+          serde_json::to_string(&val).map_err(|e| JsonlDBError::serde_to_string_failed(e))?;
 
-        let arr = vec_to_array(env, vec)?;
-        let reference = env.create_reference(&arr)?;
-        e.insert(DBEntry::Reference(stringified, reference));
-
-        Some(JsValue::Object(arr))
-      }
-
-      DBEntry::Native(val) if val.is_object() => {
-        let map = val.as_object().unwrap().to_owned();
-        let stringified =
-          serde_json::to_string(&map).map_err(|e| JsonlDBError::serde_to_string_failed(e))?;
-
-        let obj = map_to_object(env, map)?;
+        let obj = unsafe { value_to_js_object(env.raw(), val.to_owned()) }?;
         let reference = env.create_reference(&obj)?;
         e.insert(DBEntry::Reference(stringified, reference));
 

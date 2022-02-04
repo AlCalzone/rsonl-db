@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 // /* eslint-disable @typescript-eslint/prefer-for-of */
 // import assert from "assert";
 import b from "benny";
@@ -90,21 +91,21 @@ async function run() {
 	// });
 
 	// // let calls = 0;
-	// function getObjectView(opts: { startkey: string; endkey: string }) {
-	// 	return db.getMany(opts.startkey, opts.endkey, "/type=state");
-	// 	// ret = ret.filter((x: any) => x.type === "state");
-	// 	// assert.strictEqual(
-	// 	// 	ret.length,
-	// 	// 	(noAllObjects * (100 - percentageOther)) / 100,
-	// 	// );
-	// 	// for (const key of db.keys()) {
-	// 	// 	if (key < opts.startkey || key > opts.endkey) continue;
-	// 	// 	db.get(key, "/type=state");
-	// 	// 	// db.get(key);
-	// 	// 	// const obj = db.get(key, "/type=state");
-	// 	// 	// if (obj) calls++;
-	// 	// }
-	// }
+	function getObjectView(opts: { startkey: string; endkey: string }) {
+		return db.getMany(opts.startkey, opts.endkey, "/type=state");
+		// ret = ret.filter((x: any) => x.type === "state");
+		// assert.strictEqual(
+		// 	ret.length,
+		// 	(noAllObjects * (100 - percentageOther)) / 100,
+		// );
+		// for (const key of db.keys()) {
+		// 	if (key < opts.startkey || key > opts.endkey) continue;
+		// 	db.get(key, "/type=state");
+		// 	// db.get(key);
+		// 	// const obj = db.get(key, "/type=state");
+		// 	// if (obj) calls++;
+		// }
+	}
 
 	// console.time("kalt");
 	// let calls = getObjectView({
@@ -144,52 +145,52 @@ async function run() {
 	await b.suite(
 		"rsonl-db",
 
-		// b.add("getObjectView", () => {
-		// 	getObjectView({
-		// 		startkey: "benchmark.0.test",
-		// 		endkey: "benchmark.0.test\u9999",
-		// 	});
-		// }),
-
-		// // b.add("getObject", async () => {
-		// // 	db.get("benchmark.0.test.1");
-		// // }),
-
-		// b.add("getObjectNull", async () => {
-		// 	db.get("benchmark.0.foobar");
-		// }),
-
-		// b.add("setObjectSmall", async () => {
-		// 	db.set("test-objsml", { a: 2, b: 3 });
-		// }),
-
-		// b.add("getObjectSmall", async () => {
-		// 	db.get("test-objsml");
-		// }),
-
-		// b.add("setObject", async () => {
-		// 	db.set("test-obj", makeObj(Math.round(Math.random() * 10000)));
-		// }),
+		b.add("getObjectView", () => {
+			getObjectView({
+				startkey: "benchmark.0.test",
+				endkey: "benchmark.0.test\u9999",
+			});
+		}),
 
 		// b.add("getObject", async () => {
-		// 	db.get("test-obj");
+		// 	db.get("benchmark.0.test.1");
 		// }),
 
-		// b.add("setArray", async () => {
-		// 	db.set("test-arr", ["foo", "bar", "baz"]);
-		// }),
+		b.add("getObjectNull", async () => {
+			db.get("benchmark.0.foobar");
+		}),
 
-		// b.add("getArray", async () => {
-		// 	db.get("test-arr");
-		// }),
+		b.add("setObjectSmall", async () => {
+			db.set("test-objsml", { a: 2, b: 3 });
+		}),
 
-		// b.add("setPrimitive", async () => {
-		// 	db.set("test-prim", Math.random());
-		// }),
+		b.add("getObjectSmall", async () => {
+			db.get("test-objsml");
+		}),
 
-		// b.add("getPrimitive", async () => {
-		// 	db.get("test-prim");
-		// }),
+		b.add("setObject", async () => {
+			db.set("test-obj", makeObj(Math.round(Math.random() * 10000)));
+		}),
+
+		b.add("getObject", async () => {
+			db.get("test-obj");
+		}),
+
+		b.add("setArray", async () => {
+			db.set("test-arr", ["foo", "bar", "baz"]);
+		}),
+
+		b.add("getArray", async () => {
+			db.get("test-arr");
+		}),
+
+		b.add("setPrimitive", async () => {
+			db.set("test-prim", Math.random());
+		}),
+
+		b.add("getPrimitive", async () => {
+			db.get("test-prim");
+		}),
 
 		b.add("getKeys", async () => {
 			for (const _key of db.keys()) {
